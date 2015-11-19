@@ -39,10 +39,11 @@ if __name__ == '__main__':
     # assert (model.points[0][6:9] == model.v2[0]).all()
     # assert (model.points[1][0:3] == model.v0[1]).all()
 
-    vertices = np.array(vertices)
-    faces = np.array(faces)
+    # vertices = np.array(vertices)
+    # faces = np.array(faces)
 
-    mlab.triangular_mesh(vertices[:,0], vertices[:,1], vertices[:,2], faces)
+    # mlab.triangular_mesh(v0, v1, v2, faces)
+    mlab.mesh(model.x, model.y, model.z)
     mlab.show()
 
     # # Create a new plot
