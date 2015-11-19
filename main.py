@@ -43,7 +43,8 @@ if __name__ == '__main__':
     # faces = np.array(faces)
 
     # mlab.triangular_mesh(v0, v1, v2, faces)
-    mlab.mesh(model.x, model.y, model.z)
+    # mlab.mesh(model.x, model.y, model.z)
+    mlab.points3d(model.x.flatten(), model.y.flatten(), model.z.flatten(), scale_factor=1)
     mlab.show()
 
     # # Create a new plot
