@@ -4,6 +4,10 @@ import numpy as np
 from mpl_toolkits import mplot3d
 from matplotlib import pyplot
 from mayavi import mlab
+# from tvtk.api import tvtk
+# from mayavi.scripts import mayavi2
+# from mayavi.sources.vtk_data_source import VTKDataSource
+# from mayavi.modules.surface import Surface
 
 from stl import mesh
 
@@ -77,19 +81,66 @@ def read_stl(fname):
         norms = model.normals[np.nonzero((faces == i).sum(1))[0], :]
         normals_v[i, :] = np.mean(norms, 0)
 
-    return vertices, normals_v, faces
+    return vertices, faces, normals_v, normals_f
 
+def view(model):
+    from mayavi.sources.vtk_data_source import VTKDataSource
+    from mayavi.modules.surface import Surface
+    from mayavi.api import Engine
+
+    src = VTKDataSource(data=model)
+    # mayavi.add_source(src)
+    # s = Surface()
+    # mayavi.add_module(s)
+
+    # Create the MayaVi engine and start it.
+    engine = Engine()
+    engine.start()
+    scene = engine.new_scene()
+    engine.add_source(src)
+
+    # Add Surface Module
+    surface = Surface()
+    engine.add_module(surface)
+
+    from pyface.api import GUI
+    gui = GUI()
+    gui.start_event_loop()
 
 if __name__ == '__main__':
     fname = '/home/tomas/Data/Paty/zari/augustynova.stl'
     # fname = '/home/tomas/Data/Paty/zari/augustynova.ply'
     # vertices, normals, faces = read_ply(fname)
-    vertices, normals, faces = read_stl(fname)
+    vertices, faces, normals_v, normals_f = read_stl(fname)
 
+    # model = tvtk.PolyData(points=vertices, polys=faces)
+    # model.point_data.vectors = normals_v
 
-    mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces[:, 1:])
+    # view(model)
+
+    if faces.shape[1] == 4:
+        faces = faces[:, 1:]
+    mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces)
     # mlab.mesh(model.x, model.y, model.z)
     # mlab.points3d(model.x.flatten(), model.y.flatten(), model.z.flatten(), scale_factor=0.6)
+
+    # cell_data = mesh_vis.mlab_source.dataset.cell_data
+    # cell_data.vectors = normals_f
+    # cell_data.vectors.name = 'Cell data'
+    # cell_data.update()
+    #
+    # mesh2 = mlab.pipeline.set_active_attribute(mesh_vis, cell_vectors='Cell data')
+    # mlab.pipeline.surface(mesh2)
+
+    point_data = mesh_vis.mlab_source.dataset.point_data
+    point_data.scalars = normals_v
+    point_data.scalars.name = 'Point data'
+    point_data.update()
+
+    mesh2 = mlab.pipeline.set_active_attribute(mesh_vis, point_scalars='Point data')
+    mlab.pipeline.surface(mesh2)
+
+
     mlab.show()
 
     # # Create a new plot
