@@ -69,14 +69,15 @@ def read_stl(fname):
         for pt in range(3):
             faces[i, pt] = np.argwhere((vertices == model.vectors[i, pt, :]).sum(1) == 3)
 
+    # computing normals
     normals_f = model.normals.copy()
     normals_v = np.zeros((vertices.shape[0], 3))
 
     for i in range(vertices.shape[0]):
         norms = model.normals[np.nonzero((faces == i).sum(1))[0], :]
-        normals_f[i, :] = np.mean(norms, 0)
+        normals_v[i, :] = np.mean(norms, 0)
 
-    return vertices, faces
+    return vertices, normals_v, faces
 
 
 if __name__ == '__main__':
