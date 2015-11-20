@@ -7,44 +7,88 @@ from mayavi import mlab
 
 from stl import mesh
 
+def read_ply(fname):
+    f = open(fname, 'r')
+    # vertices = []  # list of vertices
+    # normals = []  # list of vertex normals
+    # faces = []  # list of faces (triangles)
+
+    # reding header
+    line = ''
+    while 'end_header' not in line:
+        line = f.readline()
+        words = line.split()
+        if 'vertex' in words:
+            n_vertices = int(words[-1])
+        elif 'face' in words:
+            n_faces = int(words[-1])
+
+    vertices = np.zeros((n_vertices, 3))
+    normals = np.zeros((n_vertices, 3))
+    faces = np.zeros((n_faces, 4), dtype=np.int)
+
+    for i in range(n_vertices):
+        words = f.readline().split()
+        vertices[i, :] = [float(x.replace(',', '.')) for x in words[0:3]]
+        normals[i, :] = [float(x.replace(',', '.')) for x in words[3:]]
+    for i in range(n_faces):
+        words = f.readline().split()
+        faces[i, :] = [int(x) for x in words]
+
+    return vertices, normals, faces
+
+def read_stl(fname):
+    # model = mesh.Mesh.from_file(fname)
+    class Model():
+        def __init__(self):
+            pass
+    model = Model()
+    model.v0 = np.array([[0, 1, 1], [1, 0, 1], [1, 0, 0], [1, 1, 1], [0, 0, 0], [0, 0, 0]])
+    model.v1 = np.array([[1, 0, 1], [0, 1, 1], [1, 0, 1], [1, 0, 1], [1, 0, 0], [0, 0, 1]])
+    model.v2 = np.array([[0, 0, 1], [1, 1, 1], [1, 1, 0], [1, 1, 0], [1, 0, 1], [1, 0, 1]])
+
+    model.vectors = np.zeros((6, 3, 3))
+    # Top of the cube
+    model.vectors[0, :, :] = np.array([[0, 1, 1], [1, 0, 1], [0, 0, 1]])
+    model.vectors[1, :, :] = np.array([[1, 0, 1], [0, 1, 1], [1, 1, 1]])
+    # Right face
+    model.vectors[2, :, :] = np.array([[1, 0, 0], [1, 0, 1], [1, 1, 0]])
+    model.vectors[3, :, :] = np.array([[1, 1, 1], [1, 0, 1], [1, 1, 0]])
+    # Left face
+    model.vectors[4, :, :] = np.array([[0, 0, 0], [1, 0, 0], [1, 0, 1]])
+    model.vectors[5, :, :] = np.array([[0, 0, 0], [0, 0, 1], [1, 0, 1]])
+
+    model.normals = np.array([[0, 0, 0], [1, 0, 0], [2, 0, 0], [3, 0, 0], [4, 0, 0], [5, 0, 0]])
+
+    vertices = np.vstack((model.v0, model.v1, model.v2))
+    tmp = np.ascontiguousarray(vertices).view(np.dtype((np.void, vertices.dtype.itemsize * vertices.shape[1])))
+    _, idx = np.unique(tmp, return_index=True)
+    vertices = vertices[idx]
+    faces = np.zeros((model.vectors.shape[0], 3), dtype=np.int)
+    for i in range(faces.shape[0]):
+        for pt in range(3):
+            faces[i, pt] = np.argwhere((vertices == model.vectors[i, pt, :]).sum(1) == 3)
+
+    normals_f = model.normals.copy()
+    normals_v = np.zeros((vertices.shape[0], 3))
+
+    for i in range(vertices.shape[0]):
+        norms = model.normals[np.nonzero((faces == i).sum(1))[0], :]
+        normals_f[i, :] = np.mean(norms, 0)
+
+    return vertices, faces
+
+
 if __name__ == '__main__':
     fname = '/home/tomas/Data/Paty/zari/augustynova.stl'
-    model = mesh.Mesh.from_file(fname)
+    # fname = '/home/tomas/Data/Paty/zari/augustynova.ply'
+    # vertices, normals, faces = read_ply(fname)
+    vertices, normals, faces = read_stl(fname)
 
-    # f=open(fname, 'r')
-    #
-    # x=[]
-    # y=[]
-    # z=[]
-    #
-    # for line in f:
-    #     strarray=line.split()
-    #     if strarray[0]=='vertex':
-    #         x=append(x,double(strarray[1]))
-    #         y=append(y,double(strarray[2]))
-    #         z=append(z,double(strarray[3]))
-    #
-    # triangles=[(i, i+1, i+2) for i in range(0, len(x),3)]
-    #
-    # pass
-    # The mesh normals (calculated automatically)
-    # model.normals
 
-    # The mesh vectors
-    # model.v0, model.v1, model.v2
-
-    # Accessing individual points (concatenation of v0, v1 and v2 in triplets)
-    # assert (model.points[0][0:3] == model.v0[0]).all()
-    # assert (model.points[0][3:6] == model.v1[0]).all()
-    # assert (model.points[0][6:9] == model.v2[0]).all()
-    # assert (model.points[1][0:3] == model.v0[1]).all()
-
-    # vertices = np.array(vertices)
-    # faces = np.array(faces)
-
-    # mlab.triangular_mesh(v0, v1, v2, faces)
+    mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces[:, 1:])
     # mlab.mesh(model.x, model.y, model.z)
-    mlab.points3d(model.x.flatten(), model.y.flatten(), model.z.flatten(), scale_factor=1)
+    # mlab.points3d(model.x.flatten(), model.y.flatten(), model.z.flatten(), scale_factor=0.6)
     mlab.show()
 
     # # Create a new plot
