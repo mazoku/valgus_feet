@@ -1,7 +1,6 @@
 # from __future__ import division
 
 import numpy as np
-# from mayavi.mlab import *
 from mayavi import mlab
 
 from numpy import pi, sin, cos, mgrid

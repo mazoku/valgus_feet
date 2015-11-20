@@ -1,8 +1,8 @@
 __author__ = 'tomas'
 
 import numpy as np
-from mpl_toolkits import mplot3d
-from matplotlib import pyplot
+# from mpl_toolkits import mplot3d
+# from matplotlib import pyplot
 from mayavi import mlab
 # from tvtk.api import tvtk
 # from mayavi.scripts import mayavi2
@@ -10,6 +10,7 @@ from mayavi import mlab
 # from mayavi.modules.surface import Surface
 
 from stl import mesh
+
 
 def read_ply(fname):
     f = open(fname, 'r')
@@ -41,28 +42,31 @@ def read_ply(fname):
 
     return vertices, normals, faces
 
+
 def read_stl(fname):
-    # model = mesh.Mesh.from_file(fname)
-    class Model():
-        def __init__(self):
-            pass
-    model = Model()
-    model.v0 = np.array([[0, 1, 1], [1, 0, 1], [1, 0, 0], [1, 1, 1], [0, 0, 0], [0, 0, 0]])
-    model.v1 = np.array([[1, 0, 1], [0, 1, 1], [1, 0, 1], [1, 0, 1], [1, 0, 0], [0, 0, 1]])
-    model.v2 = np.array([[0, 0, 1], [1, 1, 1], [1, 1, 0], [1, 1, 0], [1, 0, 1], [1, 0, 1]])
-
-    model.vectors = np.zeros((6, 3, 3))
-    # Top of the cube
-    model.vectors[0, :, :] = np.array([[0, 1, 1], [1, 0, 1], [0, 0, 1]])
-    model.vectors[1, :, :] = np.array([[1, 0, 1], [0, 1, 1], [1, 1, 1]])
-    # Right face
-    model.vectors[2, :, :] = np.array([[1, 0, 0], [1, 0, 1], [1, 1, 0]])
-    model.vectors[3, :, :] = np.array([[1, 1, 1], [1, 0, 1], [1, 1, 0]])
-    # Left face
-    model.vectors[4, :, :] = np.array([[0, 0, 0], [1, 0, 0], [1, 0, 1]])
-    model.vectors[5, :, :] = np.array([[0, 0, 0], [0, 0, 1], [1, 0, 1]])
-
-    model.normals = np.array([[0, 0, 0], [1, 0, 0], [2, 0, 0], [3, 0, 0], [4, 0, 0], [5, 0, 0]])
+    model = mesh.Mesh.from_file(fname)
+    # class Model():
+    #     def __init__(self):
+    #         pass
+    # model = Model()
+    # model.v0 = np.array([[0, 1, 1], [1, 0, 1], [1, 0, 0], [1, 1, 1], [0, 0, 0], [0, 0, 0]])
+    # model.v1 = np.array([[1, 0, 1], [0, 1, 1], [1, 0, 1], [1, 0, 1], [1, 0, 0], [0, 0, 1]])
+    # model.v2 = np.array([[0, 0, 1], [1, 1, 1], [1, 1, 0], [1, 1, 0], [1, 0, 1], [1, 0, 1]])
+    #
+    # model.vectors = np.zeros((6, 3, 3))
+    # # Top of the cube
+    # model.vectors[0, :, :] = np.array([[0, 1, 1], [1, 0, 1], [0, 0, 1]])
+    # model.vectors[1, :, :] = np.array([[1, 0, 1], [0, 1, 1], [1, 1, 1]])
+    # # Right face
+    # model.vectors[2, :, :] = np.array([[1, 0, 0], [1, 0, 1], [1, 1, 0]])
+    # model.vectors[3, :, :] = np.array([[1, 1, 1], [1, 0, 1], [1, 1, 0]])
+    # # Left face
+    # model.vectors[4, :, :] = np.array([[0, 0, 0], [1, 0, 0], [1, 0, 1]])
+    # model.vectors[5, :, :] = np.array([[0, 0, 0], [0, 0, 1], [1, 0, 1]])
+    #
+    # # model.normals = np.array([[0, 0, 0], [1, 0, 0], [2, 0, 0], [3, 0, 0], [4, 0, 0], [5, 0, 0]])
+    # model.normals = np.array([[0, 0, 1], [0, 0, 1], [1, 0, 0], [1, 0, 0], [0, 0, -1], [0, 0, -1]])  # faces normals
+    # # model.normals = np.array([[0, -1, 0], [0, 1, 1], [0, 0, 1], [1, 1, 0], [1, 1, 1], [1, 0, 0], [1, 0, 1]])  # vertices normals
 
     vertices = np.vstack((model.v0, model.v1, model.v2))
     tmp = np.ascontiguousarray(vertices).view(np.dtype((np.void, vertices.dtype.itemsize * vertices.shape[1])))
@@ -75,81 +79,52 @@ def read_stl(fname):
 
     # computing normals
     normals_f = model.normals.copy()
-    normals_v = np.zeros((vertices.shape[0], 3))
 
+    normals_v = np.zeros((vertices.shape[0], 3))
     for i in range(vertices.shape[0]):
         norms = model.normals[np.nonzero((faces == i).sum(1))[0], :]
         normals_v[i, :] = np.mean(norms, 0)
 
     return vertices, faces, normals_v, normals_f
 
-def view(model):
-    from mayavi.sources.vtk_data_source import VTKDataSource
-    from mayavi.modules.surface import Surface
-    from mayavi.api import Engine
 
-    src = VTKDataSource(data=model)
-    # mayavi.add_source(src)
-    # s = Surface()
-    # mayavi.add_module(s)
+def dihedral_angles(vec, plane='XY'):
+    if plane == 'XZ':
+        n = np.array([0, 1, 0])
+    elif plane == 'YZ':
+        n = np.array([1, 0, 0])
+    else:
+        n = np.array([0, 0, 1])
 
-    # Create the MayaVi engine and start it.
-    engine = Engine()
-    engine.start()
-    scene = engine.new_scene()
-    engine.add_source(src)
+    if len(vec.shape) == 1:  # only one vector
+        vec = np.expand_dims(vec, axis=0)
 
-    # Add Surface Module
-    surface = Surface()
-    engine.add_module(surface)
+    dihs = np.zeros(vec.shape[0])
+    for i in range(vec.shape[0]):
+        dih = np.arcsin(np.dot(n, vec[i,:]) / (np.linalg.norm(n) * np.linalg.norm(vec[i,:])))
+        dih = np.degrees(dih)
+        dih = min(dih, 180 - dih)
+        dihs[i] = dih
 
-    from pyface.api import GUI
-    gui = GUI()
-    gui.start_event_loop()
+    return dihs
+
 
 if __name__ == '__main__':
+
     fname = '/home/tomas/Data/Paty/zari/augustynova.stl'
     # fname = '/home/tomas/Data/Paty/zari/augustynova.ply'
     # vertices, normals, faces = read_ply(fname)
     vertices, faces, normals_v, normals_f = read_stl(fname)
 
-    # model = tvtk.PolyData(points=vertices, polys=faces)
-    # model.point_data.vectors = normals_v
-
-    # view(model)
+    # counting dihedral angles between XY-plane and vertex normals
+    # dihedrals = dihedral_angles(normals_v)
+    # print dihedrals
 
     if faces.shape[1] == 4:
         faces = faces[:, 1:]
     mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces)
-    # mlab.mesh(model.x, model.y, model.z)
-    # mlab.points3d(model.x.flatten(), model.y.flatten(), model.z.flatten(), scale_factor=0.6)
-
-    # cell_data = mesh_vis.mlab_source.dataset.cell_data
-    # cell_data.vectors = normals_f
-    # cell_data.vectors.name = 'Cell data'
-    # cell_data.update()
-    #
-    # mesh2 = mlab.pipeline.set_active_attribute(mesh_vis, cell_vectors='Cell data')
-    # mlab.pipeline.surface(mesh2)
-
-    point_data = mesh_vis.mlab_source.dataset.point_data
-    point_data.scalars = normals_v
-    point_data.scalars.name = 'Point data'
-    point_data.update()
-
-    mesh2 = mlab.pipeline.set_active_attribute(mesh_vis, point_scalars='Point data')
-    mlab.pipeline.surface(mesh2)
-
+    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=dihedrals)
+    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=vertices[:, 2])
+    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=range(vertices.shape[0]))
 
     mlab.show()
-
-    # # Create a new plot
-    # figure = pyplot.figure()
-    # axes = mplot3d.Axes3D(figure)
-    # axes.add_collection3d(mplot3d.art3d.Poly3DCollection(model.vectors))
-    # # Auto scale to the mesh size
-    # scale = model.points.flatten(-1)
-    # axes.auto_scale_xyz(scale, scale, scale)
-    #
-    # # Show the plot to the screen
-    # pyplot.show()
