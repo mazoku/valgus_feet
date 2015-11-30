@@ -8,6 +8,10 @@ from mayavi import mlab
 # from mayavi.scripts import mayavi2
 # from mayavi.sources.vtk_data_source import VTKDataSource
 # from mayavi.modules.surface import Surface
+import transformations as trans
+
+from sklearn import decomposition as skldec
+from sklearn import cluster as sklclu
 
 from stl import mesh
 import pcl
@@ -125,8 +129,11 @@ def dihedral_angles(vec, plane='XY'):
     return dihs
 
 
-def align_with_desk(vertices):
-    cloud = pcl.PointCloud(vertices.astype(np.float32))
+def align_with_desk(vertices, idxs=None):
+    if idxs is None:
+        idxs = np.ones(vertices.shape[0], dtype=np.bool)
+    vertices_i = vertices[idxs,...]
+    cloud = pcl.PointCloud(vertices_i.astype(np.float32))
     # vertices, faces, normals_v, normals_f = read_stl(fname)
 
     # plane segmentation
@@ -140,8 +147,8 @@ def align_with_desk(vertices):
     indices, model = seg.segment()
     model = [-x for x in model]
 
-    labels = np.zeros(vertices.shape[0])
-    labels[indices] = 1
+    labels = np.zeros(vertices.shape[0], dtype=np.bool)
+    labels[np.nonzero(idxs)[0][np.nonzero(indices)[0]]] = 1
 
     u, v, w = model[:3]
     fac1 = np.sqrt(u**2 + v**2)
@@ -161,36 +168,156 @@ def align_with_desk(vertices):
 
     return vertices, labels
 
+def plane_as_xy_transform(pts, plane):
+    # plane: ax + by - z + d = 0, norm = (a, b, -1)
+    u, v, w = plane[:3]
+    fac1 = np.sqrt(u**2 + v**2)
+    Txz = np.matrix([[u / fac1, v / fac1, 0, 0],
+                    [-v / fac1, u / fac1, 0, 0],
+                    [0, 0, 1, 0],
+                    [0, 0, 0, 1]])  # vector to xz-plane
+    fac2 = np.linalg.norm(plane[:3])
+    Tz = np.matrix([[w / fac2, 0, -fac1 / fac2, 0],
+                   [0, 1, 0, 0],
+                   [fac1 / fac2, 0, w / fac2, 0],
+                   [0, 0, 0, 1]])  # vector in xz-plane to z-axis
+    TM = Tz * Txz
+
+    # pts = np.dot(pts, TM)
+    pts = np.array(np.dot(pts, TM[:3, :3].T))
+    return pts
+
+
+def pca(vertices, faces, labels, n_comps=2, show=False):
+    labeled_v = vertices[labels, ...]
+    vertices_n = np.zeros_like(vertices)
+
+    if n_comps == 2:
+        data = labeled_v[:, :2]
+    elif n_comps == 3:
+        data = labeled_v
+
+    pca = skldec.PCA(n_components=n_comps)
+    pca.fit(data)
+
+    if n_comps == 2:
+        # vertices_n[:, :2] = pca.inverse_transform(vertices[:, :2])
+        vertices_n[:, :2] = pca.transform(vertices[:, :2])
+        vertices_n[:, 2] = vertices[:, 2]
+    else:
+        # vertices_n = pca.inverse_transform(vertices)
+        vertices_n = pca.transform(vertices)
+
+    # plt.figure()
+    # plt.plot(vertices_n[:, 0], vertices_n[:, 1], 'rx')
+    # plt.axes().set_aspect('equal')
+    # plt.show()
+
+    if show:
+        mlab.triangular_mesh(vertices_n[:, 0], vertices_n[:, 1], vertices_n[:, 2], faces, scalars=labels.astype(np.int))
+        mlab.show()
+
+    return vertices_n
+
+def align_xy_axes(pts, labels):
+    labeled_v = vertices[labels, ...]
+
+    for i in range(0, 180, 2):
+        TM = trans.axangle2mat((0, 0, 1), np.deg2rad(i))
+        pts_t = np.array(np.dot(labeled_v, TM.T))
+
+        #TODO: spocitat projekci a urcit optimalni
+        plt.figure()
+        plt.plot(labeled_v[:, 0], labeled_v[:, 1], 'rx')
+        plt.hold(True)
+        plt.plot(pts_t[:, 0], pts_t[:, 1], 'bx')
+        plt.axes().set_aspect('equal')
+        plt.show()
+
+def planefit(vertices):
+    # Fits a plane to a point cloud,
+    # Where Z = aX + bY + c
+    # Rearanging Eqn1: aX + bY -Z +c =0
+    # Gives normal (a,b,-1)
+    # Normal = (a,b,-1)
+    [rows, cols] = vertices.shape
+    G = np.ones((rows, 3))
+    G[:, 0] = vertices[:, 0]  #X
+    G[:, 1] = vertices[:, 1]  #Y
+    Z = vertices[:, 2]
+    (a, b, c), resid, rank, s = np.linalg.lstsq(G, Z)
+    plane = (a, b, -1, c)
+    # normal = (a, b, -1)
+    # nn = np.linalg.norm(normal)
+    # normal = normal / nn
+    # return normal
+    return plane
 
 if __name__ == '__main__':
 
-    # fname = '/home/tomas/Data/Paty/zari/ply/augustynova.stl'
-    fname = '/home/tomas/Data/Paty/zari/ply/augustynova.ply'
+    # fname = '/home/tomas/Data/Paty/zari/ply/augustynova.ply'
+    # fname = '/home/tomas/Data/Paty/zari/ply/babjak.ply'
+    fname = '/home/tomas/Data/Paty/zari/ply/barcala.ply'
     vertices, faces, normals_v = read_ply(fname)
+    if faces.shape[1] == 4:
+        faces = faces[:, 1:]
     vertices_o = vertices.copy()
 
-    vertices, desk_labels = align_with_desk(vertices)
+    # vertices, desk_labels = align_with_desk(vertices)
+
+    # align_xy_axes(vertices, faces, np.ones(vertices.shape[0], dtype=np.bool), n_comps=3, show=True)
+
+    # align_xy_axes(vertices, faces, desk_labels, n_comps=2, show=True)
 
     # counting dihedral angles between XY-plane and vertex normals
     # dihedrals = dihedral_angles(normals_v)
     # hist, bin_edges = np.histogram(dihedrals, bins=180, density=True)
     # bins = [np.mean((bin_edges[x], bin_edges[x + 1])) for x in range(len(hist)) ]
-    #
     # max_ang = bins[np.argmax(hist)]
+
     # print max_ang
     # plt.figure()
     # plt.plot(bins, hist)
     # plt.show()
+    dih_xy = dihedral_angles(normals_v, plane='XY')
+    dih_xz = dihedral_angles(normals_v, plane='XZ')
+    dih_yz = dihedral_angles(normals_v, plane='YZ')
 
-    # labels = np.zeros(vertices.shape[0])
+    # KMEANS
+    print 'KMeans clustering ...',
+    X = np.vstack((dih_xy, dih_xz, dih_yz)).T
+    n_clusters = 10
+    kmeans = sklclu.KMeans(n_clusters=n_clusters)
+    kmeans.fit(X)
+    labels = kmeans.labels_
+    hist, bin_edges = np.histogram(labels, bins=n_clusters, density=True)
+    max_lab = labels[np.argmax(hist)]
+    max_labels = labels == max_lab
+    print 'done'
+
+    plane = planefit(vertices[max_labels,...])# * np.array([-1, -1, -1, 1])
+    vertices = plane_as_xy_transform(vertices, plane)
+    # print (vertices[:, 2] < 100).sum()
+    # print (vertices[:, 2] > 100).sum()
+    if (vertices[:, 2] < 100).sum() > (vertices[:, 2] > 100).sum():
+        vertices[:, 2] *= -1
+
+    pca(vertices, faces, max_labels, n_comps=3, show=False)
+    align_xy_axes(vertices, max_labels)
+
+    # labels = np.zeros(vertices.shape[0], dtype=np.bool)
     # labels = np.where((max_ang - 5 < dihedrals) * (dihedrals < max_ang + 5), 1, 0)
     # labels = np.abs(dihedrals - max_ang)
 
-    if faces.shape[1] == 4:
-        faces = faces[:, 1:]
+    # vertices, desk_labels = align_with_desk(vertices, idxs=labels>0)
+    # vertices, desk_labels = align_with_desk(vertices, idxs=max_labels)
+
     # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces)
-    mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=desk_labels)
+    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=desk_labels.astype(np.int))
     # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=vertices[:, 2])
     # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=range(vertices.shape[0]))
+    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=labels)
+    mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=max_labels.astype(np.int))
+    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=desk_labels.astype(np.int))
 
     mlab.show()
