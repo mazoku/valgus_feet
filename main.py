@@ -12,6 +12,7 @@ import transformations as trans
 
 from sklearn import decomposition as skldec
 from sklearn import cluster as sklclu
+from skimage import exposure as skiexp
 
 from stl import mesh
 import pcl
@@ -222,17 +223,100 @@ def pca(vertices, faces, labels, n_comps=2, show=False):
 def align_xy_axes(pts, labels):
     labeled_v = vertices[labels, ...]
 
-    for i in range(0, 180, 2):
+    min_en = np.Inf
+    min_en_rot = None
+    for i in range(0, 180, 1):
         TM = trans.axangle2mat((0, 0, 1), np.deg2rad(i))
         pts_t = np.array(np.dot(labeled_v, TM.T))
 
-        #TODO: spocitat projekci a urcit optimalni
+        en = get_energy(pts_t)
+        if en < min_en:
+            min_en = en
+            min_en_rot = i
+
+        # plt.figure()
+        # plt.plot(labeled_v[:, 0], labeled_v[:, 1], 'rx')
+        # plt.hold(True)
+        # plt.plot(pts_t[:, 0], pts_t[:, 1], 'bx')
+        # plt.axes().set_aspect('equal')
+        # plt.show()
+
+    print 'Min energy: %.2f, rotation angle:%i degs' % (min_en, min_en_rot
+                                                   )
+    # points rotation
+    TM = trans.axangle2mat((0, 0, 1), np.deg2rad(min_en_rot))
+    pts_t = np.array(np.dot(pts, TM.T))
+
+    plt.figure()
+    plt.subplot(221)
+    plt.plot(pts[:, 0], pts[:, 1], 'rx'), plt.title('input')
+    # plt.axes().set_aspect('equal')
+    plt.subplot(222)
+    plt.plot(pts_t[:, 0], pts_t[:, 1], 'bx'), plt.title('aligned')
+    # plt.axes().set_aspect('equal')
+
+    # if the feets are above each other, we have to rotate them 90 degrees
+    labeled_v = pts_t[labels, ...]
+    hist_x, bins_x = skiexp.histogram(labeled_v[:, 0], nbins=256)
+    hist_y, bins_y = skiexp.histogram(labeled_v[:, 1], nbins=256)
+    len_x = bins_x[-1] - bins_x[0]
+    len_y = bins_y[-1] - bins_y[0]
+    if len_x > len_y:
+        ang = 90
+        print 'Rotating 90 degs (to have the feet next to each other).'
+        TM = trans.axangle2mat((0, 0, 1), np.deg2rad(ang))
+        pts_t = np.array(np.dot(pts_t, TM.T))
+
+    plt.subplot(223)
+    plt.plot(pts_t[:, 0], pts_t[:, 1], 'bx'), plt.title('to be next to each other')
+    # plt.axes().set_aspect('equal')
+
+    # if the feets are facing down, we have to rotate them 180 degrees
+    pts_tmp = pts_t[pts_t[:, 2] > 100, :]
+    hist_y, bins_y = skiexp.histogram(pts_tmp[:, 1], nbins=256)
+
+    cent_y = (bins_y[-1] + bins_y[0]) / 2
+    # print 'max_hist=%.1f, cent=%.1f' % (bins_y[np.argmax(hist_y)], cent_y)
+    if bins_y[np.argmax(hist_y)] > cent_y:
+        ang = 180
+        print 'Rotating 180 degs (to have the feet facing up).'
+        TM = trans.axangle2mat((0, 0, 1), np.deg2rad(ang))
+        pts_t = np.array(np.dot(pts_t, TM.T))
+
+    # plt.figure()
+    # plt.subplot(121), plt.plot(pts_tmp[:, 0], pts_tmp[:, 1], 'mx')
+    # plt.subplot(122), plt.plot(bins_y, hist_y, 'm-')
+    # plt.show()
+
+    plt.subplot(224)
+    plt.plot(pts_t[:, 0], pts_t[:, 1], 'bx'), plt.title('to face up')
+    # plt.axes().set_aspect('equal')
+    plt.show()
+
+    return pts_t
+
+def get_energy(pts, show=False):
+    hist_x, bins_x = skiexp.histogram(pts[:, 0], nbins=256)
+    hist_y, bins_y = skiexp.histogram(pts[:, 1], nbins=256)
+
+    std_x = np.std(hist_x)
+    std_y = np.std(hist_y)
+
+    len_x = bins_x[-1] - bins_x[0]
+    len_y = bins_y[-1] - bins_y[0]
+
+    # print 'std_x=%.2f, std_y=%.2f, len_x=%.2f, len_y=%.2f' % (std_x, std_y, len_x, len_y)
+
+    en = 10000 / std_x + 10000 / std_y + len_x + len_y
+
+    if show:
         plt.figure()
-        plt.plot(labeled_v[:, 0], labeled_v[:, 1], 'rx')
-        plt.hold(True)
-        plt.plot(pts_t[:, 0], pts_t[:, 1], 'bx')
-        plt.axes().set_aspect('equal')
+        plt.subplot(121), plt.plot(pts[:, 0], pts[:, 1], 'bx')
+        plt.subplot(222), plt.plot(bins_x, hist_x, 'b-'), plt.title('X-projection')
+        plt.subplot(224), plt.plot(bins_y, hist_y, 'b-'), plt.title('Y-projection')
         plt.show()
+
+    return en
 
 def planefit(vertices):
     # Fits a plane to a point cloud,
@@ -290,7 +374,8 @@ if __name__ == '__main__':
     kmeans = sklclu.KMeans(n_clusters=n_clusters)
     kmeans.fit(X)
     labels = kmeans.labels_
-    hist, bin_edges = np.histogram(labels, bins=n_clusters, density=True)
+    # hist, bin_edges = np.histogram(labels, bins=n_clusters, density=True)
+    hist, bins = skiexp.histogram(labels, nbins=n_clusters)
     max_lab = labels[np.argmax(hist)]
     max_labels = labels == max_lab
     print 'done'
@@ -303,7 +388,7 @@ if __name__ == '__main__':
         vertices[:, 2] *= -1
 
     pca(vertices, faces, max_labels, n_comps=3, show=False)
-    align_xy_axes(vertices, max_labels)
+    vertices = align_xy_axes(vertices, max_labels)
 
     # labels = np.zeros(vertices.shape[0], dtype=np.bool)
     # labels = np.where((max_ang - 5 < dihedrals) * (dihedrals < max_ang + 5), 1, 0)
