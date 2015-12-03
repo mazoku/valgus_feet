@@ -169,7 +169,8 @@ def align_with_desk(vertices, idxs=None):
 
     return vertices, labels
 
-def plane_as_xy_transform(pts, plane):
+
+def plane_as_xy_transform(pts, plane, table_labs):
     # plane: ax + by - z + d = 0, norm = (a, b, -1)
     u, v, w = plane[:3]
     fac1 = np.sqrt(u**2 + v**2)
@@ -186,7 +187,46 @@ def plane_as_xy_transform(pts, plane):
 
     # pts = np.dot(pts, TM)
     pts = np.array(np.dot(pts, TM[:3, :3].T))
+
+    # shift the plane to zero height
+    median_z = np.median(pts[table_labs,2])
+    pts[:, 2] -= median_z
+
     return pts
+
+
+def splitMesh(vertices, faces, mask_v=None):
+    f_sets = np.zeros(faces.shape[0], dtype=np.int)
+    v_sets = np.zeros(vertices.shape[0], dtype=np.int)
+    current_set = 0
+
+    # masking the faces
+    if mask_v is not None:
+        f_m_out_inds = np.in1d(faces, np.nonzero(mask_v == 0)[0]).reshape(faces.shape[0], 3).any(1)
+        f_sets[f_m_out_inds] = -1
+        v_sets[mask_v == 0] = -1
+
+    while (f_sets == 0).any():
+        next_avail_face = np.nonzero(f_sets == 0)[0][0]
+
+        current_set += 1
+        print 'Connecting set #%i...' % current_set,
+
+        open_vertices = faces[next_avail_face, :]
+        while open_vertices.any():
+            avail_face_inds = np.nonzero(f_sets == 0)[0]
+            avail_face_sub = np.in1d(faces[avail_face_inds, :], open_vertices).reshape(avail_face_inds.shape[0], 3).any(1)
+            f_sets[avail_face_inds[avail_face_sub]] = current_set
+            verts_inds = np.unique(faces[avail_face_inds[avail_face_sub], :].flatten())
+            v_sets[tuple((verts_inds,))] = current_set
+            open_vertices = faces[avail_face_inds[avail_face_sub], :]
+        print 'done. Set #%i has %i faces.' % (current_set, (f_sets == current_set).sum())
+
+    f_sets -= 1
+    v_sets -= 1
+    f_sets[f_m_out_inds] = -1
+    v_sets[mask_v == 0] = -1
+    return f_sets, v_sets
 
 
 def pca(vertices, faces, labels, n_comps=2, show=False):
@@ -220,7 +260,8 @@ def pca(vertices, faces, labels, n_comps=2, show=False):
 
     return vertices_n
 
-def align_xy_axes(pts, labels):
+
+def align_xy_axes(pts, labels, show=False):
     labeled_v = vertices[labels, ...]
 
     min_en = np.Inf
@@ -247,13 +288,14 @@ def align_xy_axes(pts, labels):
     TM = trans.axangle2mat((0, 0, 1), np.deg2rad(min_en_rot))
     pts_t = np.array(np.dot(pts, TM.T))
 
-    plt.figure()
-    plt.subplot(221)
-    plt.plot(pts[:, 0], pts[:, 1], 'rx'), plt.title('input')
-    # plt.axes().set_aspect('equal')
-    plt.subplot(222)
-    plt.plot(pts_t[:, 0], pts_t[:, 1], 'bx'), plt.title('aligned')
-    # plt.axes().set_aspect('equal')
+    if show:
+        plt.figure()
+        plt.subplot(221)
+        plt.plot(pts[:, 0], pts[:, 1], 'rx'), plt.title('input')
+        # plt.axes().set_aspect('equal')
+        plt.subplot(222)
+        plt.plot(pts_t[:, 0], pts_t[:, 1], 'bx'), plt.title('aligned')
+        # plt.axes().set_aspect('equal')
 
     # if the feets are above each other, we have to rotate them 90 degrees
     labeled_v = pts_t[labels, ...]
@@ -267,9 +309,10 @@ def align_xy_axes(pts, labels):
         TM = trans.axangle2mat((0, 0, 1), np.deg2rad(ang))
         pts_t = np.array(np.dot(pts_t, TM.T))
 
-    plt.subplot(223)
-    plt.plot(pts_t[:, 0], pts_t[:, 1], 'bx'), plt.title('to be next to each other')
-    # plt.axes().set_aspect('equal')
+    if show:
+        plt.subplot(223)
+        plt.plot(pts_t[:, 0], pts_t[:, 1], 'bx'), plt.title('to be next to each other')
+        # plt.axes().set_aspect('equal')
 
     # if the feets are facing down, we have to rotate them 180 degrees
     pts_tmp = pts_t[pts_t[:, 2] > 100, :]
@@ -288,12 +331,14 @@ def align_xy_axes(pts, labels):
     # plt.subplot(122), plt.plot(bins_y, hist_y, 'm-')
     # plt.show()
 
-    plt.subplot(224)
-    plt.plot(pts_t[:, 0], pts_t[:, 1], 'bx'), plt.title('to face up')
-    # plt.axes().set_aspect('equal')
-    plt.show()
+    if show:
+        plt.subplot(224)
+        plt.plot(pts_t[:, 0], pts_t[:, 1], 'bx'), plt.title('to face up')
+        # plt.axes().set_aspect('equal')
+        plt.show()
 
     return pts_t
+
 
 def get_energy(pts, show=False):
     hist_x, bins_x = skiexp.histogram(pts[:, 0], nbins=256)
@@ -318,6 +363,7 @@ def get_energy(pts, show=False):
 
     return en
 
+
 def planefit(vertices):
     # Fits a plane to a point cloud,
     # Where Z = aX + bY + c
@@ -337,8 +383,9 @@ def planefit(vertices):
     # return normal
     return plane
 
-if __name__ == '__main__':
 
+# ---------------------------------------------------------------------------------------------------
+if __name__ == '__main__':
     # fname = '/home/tomas/Data/Paty/zari/ply/augustynova.ply'
     # fname = '/home/tomas/Data/Paty/zari/ply/babjak.ply'
     fname = '/home/tomas/Data/Paty/zari/ply/barcala.ply'
@@ -380,10 +427,18 @@ if __name__ == '__main__':
     max_labels = labels == max_lab
     print 'done'
 
-    plane = planefit(vertices[max_labels,...])# * np.array([-1, -1, -1, 1])
-    vertices = plane_as_xy_transform(vertices, plane)
-    # print (vertices[:, 2] < 100).sum()
-    # print (vertices[:, 2] > 100).sum()
+    # FITTING PLANE
+    print 'Fitting plane'
+    f_sets, v_sets = splitMesh(vertices, faces, mask_v=max_labels)
+    n_sets = v_sets.max() + 1
+    sizes = np.zeros(n_sets)
+    for i in range(n_sets):
+        sizes[i] = (v_sets == i).sum()
+    max_set = np.argmax(sizes)
+
+    # plane = planefit(vertices[max_labels,...])# * np.array([-1, -1, -1, 1])
+    plane = planefit(vertices[v_sets == max_set,...])# * np.array([-1, -1, -1, 1])
+    vertices = plane_as_xy_transform(vertices, plane, max_labels)
     if (vertices[:, 2] < 100).sum() > (vertices[:, 2] > 100).sum():
         vertices[:, 2] *= -1
 
@@ -397,12 +452,14 @@ if __name__ == '__main__':
     # vertices, desk_labels = align_with_desk(vertices, idxs=labels>0)
     # vertices, desk_labels = align_with_desk(vertices, idxs=max_labels)
 
+    thresh_z = 5
     # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces)
-    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=desk_labels.astype(np.int))
+    mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=(vertices[:, 2] > thresh_z).astype(np.int))
+    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=(v_sets==max_set).astype(np.int))
     # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=vertices[:, 2])
-    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=range(vertices.shape[0]))
     # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=labels)
-    mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=max_labels.astype(np.int))
+    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=max_labels.astype(np.int))
     # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=desk_labels.astype(np.int))
+    mlab.colorbar()
 
     mlab.show()
