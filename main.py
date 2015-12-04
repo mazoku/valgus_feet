@@ -304,10 +304,14 @@ def align_xy_axes(pts, labels, show=False):
     len_x = bins_x[-1] - bins_x[0]
     len_y = bins_y[-1] - bins_y[0]
     if len_x > len_y:
+        cent_y = (bins_x.max() + bins_x.min()) / 2
+
         ang = 90
         print 'Rotating 90 degs (to have the feet next to each other).'
         TM = trans.axangle2mat((0, 0, 1), np.deg2rad(ang))
         pts_t = np.array(np.dot(pts_t, TM.T))
+    else:
+        cent_y = (bins_y.max() + bins_y.min()) / 2
 
     if show:
         plt.subplot(223)
@@ -316,22 +320,19 @@ def align_xy_axes(pts, labels, show=False):
 
     # if the feets are facing down, we have to rotate them 180 degrees
     pts_tmp = pts_t[pts_t[:, 2] > 100, :]
-    hist_y, bins_y = skiexp.histogram(pts_tmp[:, 1], nbins=256)
+    # hist_y, bins_y = skiexp.histogram(pts_tmp[:, 1], nbins=256)
+    mean_y = pts_tmp[:, 1].mean()
 
-    cent_y = (bins_y[-1] + bins_y[0]) / 2
-    # print 'max_hist=%.1f, cent=%.1f' % (bins_y[np.argmax(hist_y)], cent_y)
-    if bins_y[np.argmax(hist_y)] > cent_y:
+    # cent_y = (bins_y[-1] + bins_y[0]) / 2
+    # if bins_y[np.argmax(hist_y)] > cent_y:
+    if mean_y > cent_y:
         ang = 180
         print 'Rotating 180 degs (to have the feet facing up).'
         TM = trans.axangle2mat((0, 0, 1), np.deg2rad(ang))
         pts_t = np.array(np.dot(pts_t, TM.T))
 
-    # plt.figure()
-    # plt.subplot(121), plt.plot(pts_tmp[:, 0], pts_tmp[:, 1], 'mx')
-    # plt.subplot(122), plt.plot(bins_y, hist_y, 'm-')
-    # plt.show()
-
     if show:
+        print 'mean(y)=%.1f, cen=%.1f' % (bins_y[np.argmax(hist_y)], cent_y)
         plt.subplot(224)
         plt.plot(pts_t[:, 0], pts_t[:, 1], 'bx'), plt.title('to face up')
         # plt.axes().set_aspect('equal')
@@ -443,7 +444,7 @@ if __name__ == '__main__':
         vertices[:, 2] *= -1
 
     pca(vertices, faces, max_labels, n_comps=3, show=False)
-    vertices = align_xy_axes(vertices, max_labels)
+    vertices = align_xy_axes(vertices, max_labels, show=True)
 
     # labels = np.zeros(vertices.shape[0], dtype=np.bool)
     # labels = np.where((max_ang - 5 < dihedrals) * (dihedrals < max_ang + 5), 1, 0)
