@@ -1,3 +1,5 @@
+from __future__ import division
+
 __author__ = 'tomas'
 
 import numpy as np
@@ -13,6 +15,8 @@ import transformations as trans
 from sklearn import decomposition as skldec
 from sklearn import cluster as sklclu
 from skimage import exposure as skiexp
+
+from scipy import signal as scisig
 
 from stl import mesh
 import pcl
@@ -391,6 +395,119 @@ def planefit(vertices):
     return plane
 
 
+def calf_point(vertices, step=1):
+    start = 0
+    end = int(np.ceil(vertices[:, 2].max()))
+    step = 1
+    widths = []
+
+    for i in range(start, end, step):
+        lower = i
+        upper = i + step
+        inds = (vertices[:, 2] > lower) * (vertices[:, 2] <= upper)
+        pts = vertices[inds, :]
+        if pts.any():
+            left = (pts[:, 0]).min()
+            right = (pts[:, 0]).max()
+            width = right - left
+        else:
+            width = 0
+        widths.append(width)
+
+        # print 'bounds = (%.1f, %.1f), l = %.1f, r = %.1f, width = %.1f' % (lower, upper, left, right, width)
+
+    widths = np.array(widths)
+    # max_w = widths.max()
+    max_w_ind = widths.argmax()
+    calf_z = max_w_ind + step / 2
+
+    lower = max_w_ind
+    upper = max_w_ind + step
+    inds = (vertices[:, 2] > lower) * (vertices[:, 2] <= upper)
+    pts = vertices[inds, :]
+    calf_x = (pts[:, 0].min() + pts[:, 0].max()) / 2
+    calf_y = pts[:, 1].min()
+
+    return calf_x, calf_y, calf_z
+
+
+def inner_ankle(vertices, mask, side):
+    start = 0
+    end = int(np.ceil(vertices[:, 2].max()))
+    step = 1
+    heights = []
+    widths = []
+    if side in ['l', 'L', 'left']:
+        is_left = True
+    elif side in ['r', 'R', 'right']:
+        is_left = False
+    else:
+        raise IOError('Wrong side type.')
+
+    for i in range(start, end, step):
+        lower = i
+        upper = i + step
+        inds = (vertices[:, 2] > lower) * (vertices[:, 2] <= upper)
+        pts = vertices[inds, :]
+        h = (lower + upper) / 2
+        heights.append(h)
+        if pts.any():
+            if is_left:
+                w = pts[:, 0].max()
+            else:
+                w = pts[:, 0].min()
+        else:
+            if len(widths) > 0:
+                w = widths[-1]
+            else:
+                w = 0
+        widths.append(w)
+
+    heights = np.array(heights)
+    widths = np.array(widths)
+
+    max_h = 80
+    min_h = 30
+    inds = np.nonzero((heights < max_h) * (heights > min_h))[0]
+
+    if is_left:
+        ankle_x = widths[inds].max()
+        ankle_z = heights[inds[widths[inds].argmax()]]
+    else:
+        ankle_x = widths[inds].min()
+        ankle_z = heights[inds[widths[inds].argmin()]]
+
+    inds = (vertices[:, 0] > (ankle_x - 5)) * (vertices[:, 0] < (ankle_x + 5)) * (vertices[:, 2] > (ankle_z -5 )) * (vertices[:, 2] < (ankle_z + 5))
+    ankle_y = vertices[inds, 1].min()
+
+    # plt.figure()
+    # plt.plot(widths, heights, 'b-')
+    # plt.hold(True)
+    # plt.plot(ankle_x, achill_z, 'ro')
+    # plt.show()
+
+    return ankle_x, ankle_y, ankle_z
+
+
+def achill_point(vertices, mask, side, eps=0.5):
+    ankle = inner_ankle(vertices, mask, side)
+
+    inds = (vertices[:, 2] > (ankle[2] - eps)) * (vertices[:, 2] < (ankle[2] + eps))
+    pts = vertices[inds, :]
+
+    # plt.figure()
+    # plt.plot(pts[:,0], pts[:,1], 'rx')
+    # plt.title('%i pts'%pts.shape[0])
+    # plt.show()
+
+    min_ind = pts[:, 1].argmin()
+    achill_x = pts[min_ind, 0]
+    achill_y = pts[min_ind, 1]
+    achill_z = ankle[2]
+
+    return achill_x, achill_y, achill_z
+
+
 # ---------------------------------------------------------------------------------------------------
 if __name__ == '__main__':
     fname = '/home/tomas/Data/Paty/zari/ply/augustynova.ply'
@@ -482,9 +599,28 @@ if __name__ == '__main__':
     feet_mask = foot_l_mask + 2 * foot_r_mask
     print 'done'
 
+    # np.save('vertices.npy', vertices)
+    # np.save('foot_l_mask.npy', foot_l_mask)
+    # np.save('foot_r_mask.npy', foot_r_mask)
+    # np.save('feet_mask.npy', feet_mask)
+    # np.save('foot_l.npy', foot_l)
+    # np.save('foot_r.npy', foot_r)
+    # np.save('faces.npy', faces)
+
+    # CALCULATING MEDIAL AXES OF THE FEET
+    axis_l = np.mean(foot_l, 0)
+    axis_r = np.mean(foot_r, 0)
+
+    foot_ll_mask = (vertices[:, 0] <= axis_l[0]) * (vertices[:, 1] < axis_l[1]) * foot_l_mask
+    foot_lr_mask = (vertices[:, 0] > axis_l[0]) * (vertices[:, 1] < axis_l[1]) * foot_l_mask
+    foot_rl_mask = (vertices[:, 0] <= axis_r[0]) * (vertices[:, 1] < axis_r[1]) * foot_r_mask
+    foot_rr_mask = (vertices[:, 0] > axis_r[0]) * (vertices[:, 1] < axis_r[1]) * foot_r_mask
+    feet_sides_mask = foot_ll_mask + 2 * foot_lr_mask + 3 * foot_rl_mask + 4 * foot_rr_mask
+
     # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=(vertices[:, 2] > thresh_z).astype(np.int))
     # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=v_sets.astype(np.int))
-    mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=feet_mask.astype(np.int))
+    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=feet_mask.astype(np.int))
+    mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=feet_sides_mask.astype(np.int))
     # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=vertices[:, 2])
     # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=max_labels.astype(np.int))
     # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=desk_labels.astype(np.int))
