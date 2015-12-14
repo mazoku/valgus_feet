@@ -431,65 +431,7 @@ def calf_point(vertices, step=1):
     return calf_x, calf_y, calf_z
 
 
-# def inner_ankle(vertices, mask, side):
-#     start = 0
-#     end = int(np.ceil(vertices[:, 2].max()))
-#     step = 1
-#     heights = []
-#     widths = []
-#     if side in ['l', 'L', 'left']:
-#         is_left = True
-#     elif side in ['r', 'R', 'right']:
-#         is_left = False
-#     else:
-#         raise IOError('Wrong side type.')
-#
-#     for i in range(start, end, step):
-#         lower = i
-#         upper = i + step
-#         inds = (vertices[:, 2] > lower) * (vertices[:, 2] <= upper)
-#         pts = vertices[inds, :]
-#         h = (lower + upper) / 2
-#         heights.append(h)
-#         if pts.any():
-#             if is_left:
-#                 w = pts[:, 0].max()
-#             else:
-#                 w = pts[:, 0].min()
-#         else:
-#             if len(widths) > 0:
-#                 w = widths[-1]
-#             else:
-#                 w = 0
-#         widths.append(w)
-#
-#     heights = np.array(heights)
-#     widths = np.array(widths)
-#
-#     max_h = 80
-#     min_h = 30
-#     inds = np.nonzero((heights < max_h) * (heights > min_h))[0]
-#
-#     if is_left:
-#         ankle_x = widths[inds].max()
-#         ankle_z = heights[inds[widths[inds].argmax()]]
-#     else:
-#         ankle_x = widths[inds].min()
-#         ankle_z = heights[inds[widths[inds].argmin()]]
-#
-#     inds = (vertices[:, 0] > (ankle_x - 5)) * (vertices[:, 0] < (ankle_x + 5)) * (vertices[:, 2] > (ankle_z -5 )) * (vertices[:, 2] < (ankle_z + 5))
-#     ankle_y = vertices[inds, 1].min()
-#
-#     # plt.figure()
-#     # plt.plot(widths, heights, 'b-')
-#     # plt.hold(True)
-#     # plt.plot(ankle_x, achill_z, 'ro')
-#     # plt.show()
-#
-#     return ankle_x, ankle_y, ankle_z
-
-
-def ankle(vertices, mask, foot_side, ankle_side):
+def ankle(vertices, foot_side, ankle_side):
     start = 0
     end = int(np.ceil(vertices[:, 2].max()))
     step = 1
@@ -516,6 +458,7 @@ def ankle(vertices, mask, foot_side, ankle_side):
         h = (lower + upper) / 2
         heights.append(h)
         if pts.any():
+            # w = pts[:, 0].max() - pts[:, 0].min()
             if (is_left and is_inner) or (not is_left and not is_inner):
                 w = pts[:, 0].max()
             elif (not is_left and is_inner) or (is_left and not is_inner):
@@ -540,15 +483,17 @@ def ankle(vertices, mask, foot_side, ankle_side):
     elif (not is_left and is_inner) or (is_left and not is_inner):
         ankle_x = widths[inds].min()
         ankle_z = heights[inds[widths[inds].argmin()]]
+    # ankle_x = widths[inds].max()
+    # ankle_z = heights[inds[widths[inds].argmax()]]
 
     inds = (vertices[:, 0] > (ankle_x - 5)) * (vertices[:, 0] < (ankle_x + 5)) * (vertices[:, 2] > (ankle_z -5 )) * (vertices[:, 2] < (ankle_z + 5))
     ankle_y = vertices[inds, 1].min()
 
-    # plt.figure()
-    # plt.plot(widths, heights, 'b-')
-    # plt.hold(True)
-    # plt.plot(ankle_x, achill_z, 'ro')
-    # plt.show()
+    plt.figure()
+    plt.plot(widths, heights, 'b-')
+    plt.hold(True)
+    plt.plot(ankle_x, ankle_z, 'ro')
+    plt.show()
 
     return ankle_x, ankle_y, ankle_z
 
@@ -573,14 +518,66 @@ def achill_point(vertices, mask, foot_side, eps=0.5):
     return achill_x, achill_y, achill_z
 
 
-def heel_point(vertices, mask, foot_side):
-    ankle_o = ankle(vertices, mask, foot_side, 'outer')
-    inds = vertices[:, 2] < (ankle_o[2] + 10)
-    pts = vertices[inds, :]
-    ind = pts[:, 1].argmin()
-    closest_y = pts[:, 1].min()
+def detect_peak(vertices, start=None, end=None):
+    if start is None:
+        start = int(np.floor(vertices[:, 2].min()))
+    if end is None:
+        end = int(np.ceil(vertices[:, 2].max()))
+    step = 1
+    heights = []
+    widths = []
 
-    return ankle_o, pts[ind, :]
+    for i in range(start, end, step):
+        lower = i
+        upper = i + step
+        inds = (vertices[:, 2] >= lower) * (vertices[:, 2] <= upper)
+        pts = vertices[inds, :]
+        h = (lower + upper) / 2
+        heights.append(h)
+        if pts.any():
+            # w = pts[:, 0].max() - pts[:, 0].min()
+            w = pts[:, 0].max()
+        else:
+            if len(widths) > 0:
+                w = widths[-1]
+            else:
+                w = 0
+        widths.append(w)
+
+    heights = np.array(heights)
+    widths = np.array(widths)
+
+    max_h = 80
+    min_h = 30
+    inds = np.nonzero((heights < max_h) * (heights > min_h))[0]
+    data_x = widths[inds]
+    data_y = heights[inds]
+
+    plt.figure()
+    plt.plot(data_x, data_y, 'b-')
+    plt.show()
+
+
+def heel_point(vertices, foot_side):
+    means = np.mean(vertices, 0)
+    if foot_side in ['l', 'L', 'left']:
+        inds = vertices[:, 0] <= means[0]
+        pts = vertices[inds, :]
+        pts[:, 0] = pts[:, 0].max() - pts[:, 0]
+    else:
+        inds = vertices[:, 0] > means[0]
+        pts = vertices[inds, :]
+    #TODO: vnejsi kotnik hledat derivaci v y-ove ose
+    detect_peak(pts)
+
+    # ankle_o = ankle(vertices, mask, foot_side, 'outer')
+    # inds = vertices[:, 2] < (ankle_o[2] + 10)
+    # pts = vertices[inds, :]
+    # ind = pts[:, 1].argmin()
+    # closest_y = pts[:, 1].min()
+
+    # return ankle_o, pts[ind, :]
+    return (0, 0, 0), (0, 0, 0)
 
 # ---------------------------------------------------------------------------------------------------
 if __name__ == '__main__':
