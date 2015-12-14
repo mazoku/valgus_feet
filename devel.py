@@ -33,7 +33,8 @@ calf_r = main.calf_point(foot_r)
 achill_l = main.achill_point(foot_l, foot_lr_mask, 'l')
 achill_r = main.achill_point(foot_r, foot_rl_mask, 'r')
 
-# PT-3 ... 
+# PT-3 & 4 ... HEEL POINTS
+ankle, cp = main.heel_point(foot_l, foot_lr_mask, 'l')
 
 # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=feet_mask.astype(np.int))
 mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=feet_sides_mask.astype(np.int))
@@ -41,6 +42,9 @@ mlab.points3d(calf_l[0], calf_l[1], calf_l[2], color=(0, 0, 0), scale_factor=8)
 mlab.points3d(calf_r[0], calf_r[1], calf_r[2], color=(0, 0, 0), scale_factor=8)
 mlab.points3d(achill_l[0], achill_l[1], achill_l[2], color=(0, 0, 0), scale_factor=8)
 mlab.points3d(achill_r[0], achill_r[1], achill_r[2], color=(0, 0, 0), scale_factor=8)
+
+mlab.points3d(ankle[0], ankle[1], ankle[2], color=(0, 0, 0), scale_factor=8)
+mlab.points3d(cp[0], cp[1], cp[2], color=(0, 0, 0), scale_factor=8)
 # mlab.colorbar()
 
 mlab.show()

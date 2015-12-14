@@ -431,18 +431,82 @@ def calf_point(vertices, step=1):
     return calf_x, calf_y, calf_z
 
 
-def inner_ankle(vertices, mask, side):
+# def inner_ankle(vertices, mask, side):
+#     start = 0
+#     end = int(np.ceil(vertices[:, 2].max()))
+#     step = 1
+#     heights = []
+#     widths = []
+#     if side in ['l', 'L', 'left']:
+#         is_left = True
+#     elif side in ['r', 'R', 'right']:
+#         is_left = False
+#     else:
+#         raise IOError('Wrong side type.')
+#
+#     for i in range(start, end, step):
+#         lower = i
+#         upper = i + step
+#         inds = (vertices[:, 2] > lower) * (vertices[:, 2] <= upper)
+#         pts = vertices[inds, :]
+#         h = (lower + upper) / 2
+#         heights.append(h)
+#         if pts.any():
+#             if is_left:
+#                 w = pts[:, 0].max()
+#             else:
+#                 w = pts[:, 0].min()
+#         else:
+#             if len(widths) > 0:
+#                 w = widths[-1]
+#             else:
+#                 w = 0
+#         widths.append(w)
+#
+#     heights = np.array(heights)
+#     widths = np.array(widths)
+#
+#     max_h = 80
+#     min_h = 30
+#     inds = np.nonzero((heights < max_h) * (heights > min_h))[0]
+#
+#     if is_left:
+#         ankle_x = widths[inds].max()
+#         ankle_z = heights[inds[widths[inds].argmax()]]
+#     else:
+#         ankle_x = widths[inds].min()
+#         ankle_z = heights[inds[widths[inds].argmin()]]
+#
+#     inds = (vertices[:, 0] > (ankle_x - 5)) * (vertices[:, 0] < (ankle_x + 5)) * (vertices[:, 2] > (ankle_z -5 )) * (vertices[:, 2] < (ankle_z + 5))
+#     ankle_y = vertices[inds, 1].min()
+#
+#     # plt.figure()
+#     # plt.plot(widths, heights, 'b-')
+#     # plt.hold(True)
+#     # plt.plot(ankle_x, achill_z, 'ro')
+#     # plt.show()
+#
+#     return ankle_x, ankle_y, ankle_z
+
+
+def ankle(vertices, mask, foot_side, ankle_side):
     start = 0
     end = int(np.ceil(vertices[:, 2].max()))
     step = 1
     heights = []
     widths = []
-    if side in ['l', 'L', 'left']:
+    if foot_side in ['l', 'L', 'left']:
         is_left = True
-    elif side in ['r', 'R', 'right']:
+    elif foot_side in ['r', 'R', 'right']:
         is_left = False
     else:
-        raise IOError('Wrong side type.')
+        raise IOError('Wrong foot side type.')
+    if ankle_side in ['in', 'inner', 'i', 'I']:
+        is_inner = True
+    elif ankle_side in ['out', 'outer', 'o', 'O']:
+        is_inner = False
+    else:
+        raise IOError('Wrong ankle side type.')
 
     for i in range(start, end, step):
         lower = i
@@ -452,9 +516,9 @@ def inner_ankle(vertices, mask, side):
         h = (lower + upper) / 2
         heights.append(h)
         if pts.any():
-            if is_left:
+            if (is_left and is_inner) or (not is_left and not is_inner):
                 w = pts[:, 0].max()
-            else:
+            elif (not is_left and is_inner) or (is_left and not is_inner):
                 w = pts[:, 0].min()
         else:
             if len(widths) > 0:
@@ -470,10 +534,10 @@ def inner_ankle(vertices, mask, side):
     min_h = 30
     inds = np.nonzero((heights < max_h) * (heights > min_h))[0]
 
-    if is_left:
+    if (is_left and is_inner) or (not is_left and not is_inner):
         ankle_x = widths[inds].max()
         ankle_z = heights[inds[widths[inds].argmax()]]
-    else:
+    elif (not is_left and is_inner) or (is_left and not is_inner):
         ankle_x = widths[inds].min()
         ankle_z = heights[inds[widths[inds].argmin()]]
 
@@ -489,10 +553,11 @@ def inner_ankle(vertices, mask, side):
     return ankle_x, ankle_y, ankle_z
 
 
-def achill_point(vertices, mask, side, eps=0.5):
-    ankle = inner_ankle(vertices, mask, side)
+def achill_point(vertices, mask, foot_side, eps=0.5):
+    # ankle_i = inner_ankle(vertices, mask, side)
+    ankle_i = ankle(vertices, mask, foot_side, 'inner')
 
-    inds = (vertices[:, 2] > (ankle[2] - eps)) * (vertices[:, 2] < (ankle[2] + eps))
+    inds = (vertices[:, 2] > (ankle_i[2] - eps)) * (vertices[:, 2] < (ankle_i[2] + eps))
     pts = vertices[inds, :]
 
     # plt.figure()
@@ -503,10 +568,19 @@ def achill_point(vertices, mask, side, eps=0.5):
     min_ind = pts[:, 1].argmin()
     achill_x = pts[min_ind, 0]
     achill_y = pts[min_ind, 1]
-    achill_z = ankle[2]
+    achill_z = ankle_i[2]
 
     return achill_x, achill_y, achill_z
 
+
+def heel_point(vertices, mask, foot_side):
+    ankle_o = ankle(vertices, mask, foot_side, 'outer')
+    inds = vertices[:, 2] < (ankle_o[2] + 10)
+    pts = vertices[inds, :]
+    ind = pts[:, 1].argmin()
+    closest_y = pts[:, 1].min()
+
+    return ankle_o, pts[ind, :]
 
 # ---------------------------------------------------------------------------------------------------
 if __name__ == '__main__':
