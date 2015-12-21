@@ -12,6 +12,9 @@ from mayavi import mlab
 # from mayavi.modules.surface import Surface
 import transformations as trans
 
+import os
+import tools
+
 from sklearn import decomposition as skldec
 from sklearn import cluster as sklclu
 from skimage import exposure as skiexp
@@ -268,7 +271,7 @@ def pca(vertices, faces, labels, n_comps=2, show=False):
 
 
 def align_xy_axes(pts, labels, show=False, talk=False):
-    labeled_v = vertices[labels, ...]
+    labeled_v = pts[labels, ...]
 
     min_en = np.Inf
     min_en_rot = None
@@ -674,11 +677,7 @@ def heel_points(vertices, heel_cut, max_h, eps=2, show=False):
     return closest_pt, widest_pt
 
 
-# ---------------------------------------------------------------------------------------------------
-if __name__ == '__main__':
-    fname = '/home/tomas/Data/Paty/zari/ply/augustynova.ply'
-    # fname = '/home/tomas/Data/Paty/zari/ply/babjak.ply'
-    # fname = '/home/tomas/Data/Paty/zari/ply/barcala.ply'
+def run(fname, show=False):
     vertices, faces, normals_v = read_ply(fname)
     if faces.shape[1] == 4:
         faces = faces[:, 1:]
@@ -766,14 +765,6 @@ if __name__ == '__main__':
     feet_mask = foot_l_mask + 2 * foot_r_mask
     print 'done'
 
-    # np.save('vertices.npy', vertices)
-    # np.save('foot_l_mask.npy', foot_l_mask)
-    # np.save('foot_r_mask.npy', foot_r_mask)
-    # np.save('feet_mask.npy', feet_mask)
-    # np.save('foot_l.npy', foot_l)
-    # np.save('foot_r.npy', foot_r)
-    # np.save('faces.npy', faces)
-
     # CALCULATING MEDIAL AXES OF THE FEET
     axis_l = np.mean(foot_l, 0)
     axis_r = np.mean(foot_r, 0)
@@ -784,13 +775,91 @@ if __name__ == '__main__':
     foot_rr_mask = (vertices[:, 0] > axis_r[0]) * (vertices[:, 1] < axis_r[1]) * foot_r_mask
     feet_sides_mask = foot_ll_mask + 2 * foot_lr_mask + 3 * foot_rl_mask + 4 * foot_rr_mask
 
-    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=(vertices[:, 2] > thresh_z).astype(np.int))
-    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=v_sets.astype(np.int))
-    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=feet_mask.astype(np.int))
-    mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=feet_sides_mask.astype(np.int))
-    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=vertices[:, 2])
-    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=max_labels.astype(np.int))
-    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=desk_labels.astype(np.int))
-    mlab.colorbar()
+    min_h = 20
+    max_h = 100
 
-    mlab.show()
+    # PT-1 ... LYTKO = CALF
+    print 'Finding calf points ...',
+    calf_l = calf_point(foot_l)
+    calf_r = calf_point(foot_r)
+    print 'done'
+
+    # PT-2 ... ACHILOVKA
+    print 'Finding Achilleus-points ...',
+    achill_l = achill_point(foot_l, 'l')
+    achill_r = achill_point(foot_r, 'r')
+    print 'done'
+
+    # PT-3 & 4 ... HEEL POINTS
+    print 'Finding heel points ...',
+    heel_cut_l, pts_l, mean_pt_l = cut_heel(foot_l, 'l')
+    closest_pt_l, widest_pt_l = heel_points(foot_l, heel_cut_l, max_h, show=False)
+    heel_cut_r, pts_r, mean_pt_r = cut_heel(foot_r, 'r')
+    closest_pt_r, widest_pt_r = heel_points(foot_r, heel_cut_r, max_h, show=False)
+    print 'done'
+
+    left_points = [calf_l, achill_l, heel_cut_l, closest_pt_l]
+    right_points = [calf_r, achill_r, heel_cut_r, closest_pt_r]
+
+    print 'Saving data ...',
+    if 'zari' in fname:
+        month = 'zari'
+    elif 'rijen' in fname:
+        month = 'rijen'
+    else:
+        month = ''
+    dirs = fname.split('/')
+    data_dir = os.path.join('/'.join(dirs[:-1]), 'npy', dirs[-1][:-4])
+    np.save(data_dir + '_vertices.npy', vertices)
+    np.save(data_dir + '_foot_l_mask.npy', foot_l_mask)
+    np.save(data_dir + '_foot_r_mask.npy', foot_r_mask)
+    np.save(data_dir + '_feet_mask.npy', feet_mask)
+    np.save(data_dir + '_foot_l.npy', foot_l)
+    np.save(data_dir + '_foot_r.npy', foot_r)
+    np.save(data_dir + '_faces.npy', faces)
+    np.save(data_dir + '_left_points.npy', left_points)
+    np.save(data_dir + '_right_points.npy', right_points)
+    print 'done\n'
+
+
+    if show:
+        # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=(vertices[:, 2] > thresh_z).astype(np.int))
+        # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=v_sets.astype(np.int))
+        # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=feet_mask.astype(np.int))
+        mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=feet_sides_mask.astype(np.int))
+        # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=vertices[:, 2])
+        # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=max_labels.astype(np.int))
+        # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=desk_labels.astype(np.int))
+        mlab.colorbar()
+
+        mlab.show()
+
+
+# ---------------------------------------------------------------------------------------------------
+if __name__ == '__main__':
+    # fname = '/home/tomas/Data/Paty/zari/ply/augustynova.ply'
+    # fname = '/home/tomas/Data/Paty/zari/ply/babjak.ply'
+    # fname = '/home/tomas/Data/Paty/zari/ply/barcala.ply'
+    dir = '/home/tomas/Data/Paty/zari/ply/'
+    names = tools.get_names(dir)
+    n_files = len(names)
+
+    log_file = open('log_file.txt', 'w')
+
+    processed = 0
+    for i in range(n_files):
+        print '--  Processing file %i/%i - %s  --' % (i + 1, n_files, names[i] + '.ply')
+        fname = os.path.join(dir[:-1], names[i] + '.ply')
+        try:
+            run(fname, show=False)
+            log_file.write(names[i] + '.ply ... ok')
+            processed += 1
+        except:
+            print 'Error ocurred!\n'
+            log_file.write(names[i] + '.ply ... FAILED')
+
+    log_file.close()
+
+    print '\n------------------'
+    print 'DONE'
+    print 'processed: %i/%i' % (processed, n_files)
