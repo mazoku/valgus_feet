@@ -68,10 +68,8 @@ if show:
     mlab.points3d(widest_pt_l[0], widest_pt_l[1], widest_pt_l[2], color=(1, 0, 1), scale_factor=8)
     mlab.points3d(widest_pt_r[0], widest_pt_r[1], widest_pt_r[2], color=(1, 0, 1), scale_factor=8)
 
-
     # mlab.points3d(ankle[0], ankle[1], ankle[2], color=(0, 0, 0), scale_factor=8)
     # mlab.points3d(cp[0], cp[1], cp[2], color=(0, 0, 0), scale_factor=8)
-
 
     # for i in range(len(pts_l)):
     #     mlab.points3d(pts_l[i][0], pts_l[i][1], pts_l[i][2], color=(0, 0, 0), scale_factor=2)
