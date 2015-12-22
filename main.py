@@ -874,7 +874,7 @@ if __name__ == '__main__':
             log_file.write(names[i] + '.ply ... ok\n')
             processed += 1
         except:
-            print 'Error ocurred!\n'
+            print 'Error occurred!\n'
             log_file.write(names[i] + '.ply ... FAILED\n')
 
     log_file.close()
