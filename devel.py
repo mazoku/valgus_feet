@@ -92,3 +92,5 @@ plane_f = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int)
 # mlab.colorbar()
 
 mlab.show()
+
+#TODO 1: use enumerate when iterating over sequence and need an item and an index as well
