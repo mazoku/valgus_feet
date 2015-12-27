@@ -12,6 +12,9 @@ from mayavi import mlab
 # from mayavi.modules.surface import Surface
 import transformations as trans
 
+import os
+import tools
+
 from sklearn import decomposition as skldec
 from sklearn import cluster as sklclu
 from skimage import exposure as skiexp
@@ -268,7 +271,7 @@ def pca(vertices, faces, labels, n_comps=2, show=False):
 
 
 def align_xy_axes(pts, labels, show=False, talk=False):
-    labeled_v = vertices[labels, ...]
+    labeled_v = pts[labels, ...]
 
     min_en = np.Inf
     min_en_rot = None
@@ -396,6 +399,9 @@ def planefit(vertices):
 
 
 def calf_point(vertices, step=1):
+    idxs = vertices[:, 1] < ((vertices[:, 1].max() + vertices[:, 1].min()) / 2)
+    vertices = vertices[idxs, :]
+
     start = 0
     end = int(np.ceil(vertices[:, 2].max()))
     step = 1
@@ -432,11 +438,6 @@ def calf_point(vertices, step=1):
 
 
 def ankle(vertices, foot_side, ankle_side, min_h=20, max_h=100):
-    # start = 0
-    # end = int(np.ceil(vertices[:, 2].max()))
-    # step = 1
-    # heights = []
-    # widths = []
     if foot_side in ['l', 'L', 'left']:
         is_left = True
     elif foot_side in ['r', 'R', 'right']:
@@ -455,12 +456,6 @@ def ankle(vertices, foot_side, ankle_side, min_h=20, max_h=100):
     cent_y = min_y + (max_y - min_y) / 3
     vertices = vertices[vertices[:, 1] < cent_y, :]
 
-    # plt.figure()
-    # # plt.plot(vertices[:, 1], vertices[:, 2], 'bx')
-    # plt.plot(vertices[:, 0], vertices[:, 2], 'bx')
-    # plt.show()
-
-    # min_h = 10
     step_z = 2
     num_z = (max_h - min_h) / step_z
     disc_z = np.linspace(min_h, max_h, num_z)
@@ -469,12 +464,6 @@ def ankle(vertices, foot_side, ankle_side, min_h=20, max_h=100):
     widths = []
     for i in range(1, inds_z.max()):
         pts = vertices[inds_z == i, :]
-        # if i >= inds_z.max() - 1:
-        #     plt.figure()
-        #     plt.plot(vertices[:, 0], vertices[:, 2], 'bx')
-        #     plt.plot(pts[:, 0], pts[:, 2], 'ro')
-        #     plt.show()
-        #     pass
         if pts.any():
             if (is_left and is_inner) or (not is_left and not is_inner):
                 w = pts[:, 0].max()
@@ -493,49 +482,6 @@ def ankle(vertices, foot_side, ankle_side, min_h=20, max_h=100):
         ankle_y = vertices[inds_z == ind, 1].max()
     elif (not is_left and is_inner) or (is_left and not is_inner):
         ankle_y = vertices[inds_z == ind, 1].min()
-
-    # for i in range(start, end, step):
-    #     lower = i
-    #     upper = i + step
-    #     inds = (vertices[:, 2] > lower) * (vertices[:, 2] <= upper)
-    #     pts = vertices[inds, :]
-    #     h = (lower + upper) / 2
-    #     heights.append(h)
-    #     if pts.any():
-    #         # w = pts[:, 0].max() - pts[:, 0].min()
-    #         if (is_left and is_inner) or (not is_left and not is_inner):
-    #             w = pts[:, 0].max()
-    #         elif (not is_left and is_inner) or (is_left and not is_inner):
-    #             w = pts[:, 0].min()
-    #     else:
-    #         if len(widths) > 0:
-    #             w = widths[-1]
-    #         else:
-    #             w = 0
-    #     widths.append(w)
-    #
-    # heights = np.array(heights)
-    # widths = np.array(widths)
-
-    # inds = np.nonzero((heights < max_h) * (heights > min_h))[0]
-    #
-    # if (is_left and is_inner) or (not is_left and not is_inner):
-    #     ankle_x = widths[inds].max()
-    #     ankle_z = heights[inds[widths[inds].argmax()]]
-    # elif (not is_left and is_inner) or (is_left and not is_inner):
-    #     ankle_x = widths[inds].min()
-    #     ankle_z = heights[inds[widths[inds].argmin()]]
-    # # ankle_x = widths[inds].max()
-    # # ankle_z = heights[inds[widths[inds].argmax()]]
-    #
-    # inds = (vertices[:, 0] > (ankle_x - 5)) * (vertices[:, 0] < (ankle_x + 5)) * (vertices[:, 2] > (ankle_z -5 )) * (vertices[:, 2] < (ankle_z + 5))
-    # ankle_y = vertices[inds, 1].min()
-    #
-    # plt.figure()
-    # plt.plot(widths, heights, 'b-')
-    # plt.hold(True)
-    # plt.plot(ankle_x, ankle_z, 'ro')
-    # plt.show()
 
     return ankle_x, ankle_y, ankle_z
 
@@ -586,6 +532,9 @@ def detect_peak(data, data_ax, foot_side, win_w=4, dir='bu', show=False):
     return peak
 
 def ankle_line(vertices, foot_side):
+    idxs = vertices[:, 1] < ((vertices[:, 1].max() + vertices[:, 1].min()) / 2)
+    vertices = vertices[idxs, :]
+
     if foot_side in ['l', 'L', 'left']:
         is_left = True
     elif foot_side in ['r', 'R', 'right']:
@@ -613,19 +562,11 @@ def ankle_line(vertices, foot_side):
     return outers
 
 
-def cut_heel(vertices, foot_side):
-    # means = np.mean(vertices, 0)
-    # if foot_side in ['l', 'L', 'left']:
-    #     inds = vertices[:, 0] <= means[0]
-    #     pts = vertices[inds, :]
-    #     pts[:, 0] = pts[:, 0].max() - pts[:, 0]
-    # else:
-    #     inds = vertices[:, 0] > means[0]
-    #     pts = vertices[inds, :]
-
+def cut_heel(vertices, foot_side, max_h):
     pts = ankle_line(vertices, foot_side)
     mean_pt = np.median(np.array(pts), 0)
-    heel_cut = vertices[:, 1].min() + 0.33 * (mean_pt[1] - vertices[:, 1].min())
+    closest_heel = vertices[vertices[:, 2] <= max_h, 1].min()
+    heel_cut = closest_heel + 0.33 * (mean_pt[1] - closest_heel)
 
     return heel_cut, pts, mean_pt
 
@@ -674,15 +615,16 @@ def heel_points(vertices, heel_cut, max_h, eps=2, show=False):
     return closest_pt, widest_pt
 
 
-# ---------------------------------------------------------------------------------------------------
-if __name__ == '__main__':
-    fname = '/home/tomas/Data/Paty/zari/ply/augustynova.ply'
-    # fname = '/home/tomas/Data/Paty/zari/ply/babjak.ply'
-    # fname = '/home/tomas/Data/Paty/zari/ply/barcala.ply'
+def run(fname, save_data=False, save_fig=False, show=False):
     vertices, faces, normals_v = read_ply(fname)
     if faces.shape[1] == 4:
         faces = faces[:, 1:]
     vertices_o = vertices.copy()
+
+    dirs = fname.split('/')
+    name = dirs[-1][:-4]
+    data_dir = os.path.join('/'.join(dirs[:-1]), 'npy')
+    fig_dir = os.path.join('/'.join(dirs[:-1]), 'figs')
 
     # vertices, desk_labels = align_with_desk(vertices)
 
@@ -704,7 +646,7 @@ if __name__ == '__main__':
     dih_xz = dihedral_angles(normals_v, plane='XZ')
     dih_yz = dihedral_angles(normals_v, plane='YZ')
 
-    # KMEANS
+    # KMEANS -------------------------------------------------------
     print 'KMeans clustering ...',
     X = np.vstack((dih_xy, dih_xz, dih_yz)).T
     n_clusters = 10
@@ -717,7 +659,7 @@ if __name__ == '__main__':
     max_labels = labels == max_lab
     print 'done'
 
-    # FITTING PLANE
+    # FITTING PLANE ------------------------------------------------
     print 'Fitting plane ...',
     f_sets, v_sets = splitMesh(vertices, faces, mask_v=max_labels)
     n_sets = v_sets.max() + 1
@@ -766,31 +708,177 @@ if __name__ == '__main__':
     feet_mask = foot_l_mask + 2 * foot_r_mask
     print 'done'
 
-    # np.save('vertices.npy', vertices)
-    # np.save('foot_l_mask.npy', foot_l_mask)
-    # np.save('foot_r_mask.npy', foot_r_mask)
-    # np.save('feet_mask.npy', feet_mask)
-    # np.save('foot_l.npy', foot_l)
-    # np.save('foot_r.npy', foot_r)
-    # np.save('faces.npy', faces)
+    # CALCULATING MEDIAL AXES OF THE FEET ----------------------------------------
+    # axis_l = np.mean(foot_l, 0)
+    # axis_r = np.mean(foot_r, 0)
 
-    # CALCULATING MEDIAL AXES OF THE FEET
-    axis_l = np.mean(foot_l, 0)
-    axis_r = np.mean(foot_r, 0)
+    # foot_ll_mask = (vertices[:, 0] <= axis_l[0]) * (vertices[:, 1] < axis_l[1]) * foot_l_mask
+    # foot_lr_mask = (vertices[:, 0] > axis_l[0]) * (vertices[:, 1] < axis_l[1]) * foot_l_mask
+    # foot_rl_mask = (vertices[:, 0] <= axis_r[0]) * (vertices[:, 1] < axis_r[1]) * foot_r_mask
+    # foot_rr_mask = (vertices[:, 0] > axis_r[0]) * (vertices[:, 1] < axis_r[1]) * foot_r_mask
+    # feet_sides_mask = foot_ll_mask + 2 * foot_lr_mask + 3 * foot_rl_mask + 4 * foot_rr_mask
 
-    foot_ll_mask = (vertices[:, 0] <= axis_l[0]) * (vertices[:, 1] < axis_l[1]) * foot_l_mask
-    foot_lr_mask = (vertices[:, 0] > axis_l[0]) * (vertices[:, 1] < axis_l[1]) * foot_l_mask
-    foot_rl_mask = (vertices[:, 0] <= axis_r[0]) * (vertices[:, 1] < axis_r[1]) * foot_r_mask
-    foot_rr_mask = (vertices[:, 0] > axis_r[0]) * (vertices[:, 1] < axis_r[1]) * foot_r_mask
-    feet_sides_mask = foot_ll_mask + 2 * foot_lr_mask + 3 * foot_rl_mask + 4 * foot_rr_mask
+    # PT-1 ... LYTKO = CALF -------------------------------------------------------
+    print 'Finding calf points ...',
+    calf_l = calf_point(foot_l)
+    calf_r = calf_point(foot_r)
+    print 'done'
 
-    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=(vertices[:, 2] > thresh_z).astype(np.int))
-    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=v_sets.astype(np.int))
-    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=feet_mask.astype(np.int))
-    mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=feet_sides_mask.astype(np.int))
-    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=vertices[:, 2])
-    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=max_labels.astype(np.int))
-    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=desk_labels.astype(np.int))
-    mlab.colorbar()
+    # PT-2 ... ACHILOVKA -----------------------------------------------------------
+    print 'Finding Achilleus\' points ...',
+    achill_l = achill_point(foot_l, 'l')
+    achill_r = achill_point(foot_r, 'r')
+    print 'done'
 
-    mlab.show()
+    # PT-3 & 4 ... HEEL POINTS ------------------------------------------------------
+    print 'Finding heel points ...',
+    min_h = 20
+    max_h = 100
+    heel_cut_l, pts_l, mean_pt_l = cut_heel(foot_l, 'l', max_h)
+    closest_pt_l, widest_pt_l = heel_points(foot_l, heel_cut_l, max_h, show=False)
+    heel_cut_r, pts_r, mean_pt_r = cut_heel(foot_r, 'r', max_h)
+    closest_pt_r, widest_pt_r = heel_points(foot_r, heel_cut_r, max_h, show=False)
+    print 'done'
+
+    left_points = [calf_l, achill_l, heel_cut_l, closest_pt_l]
+    right_points = [calf_r, achill_r, heel_cut_r, closest_pt_r]
+
+    if save_data:
+        print 'Saving data ...',
+        if not os.path.exists(data_dir):
+            os.mkdir(data_dir)
+
+        np.save(os.path.join(data_dir, name) + '_vertices.npy', vertices)
+        np.save(os.path.join(data_dir, name) + '_foot_l_mask.npy', foot_l_mask)
+        np.save(os.path.join(data_dir, name) + '_foot_r_mask.npy', foot_r_mask)
+        np.save(os.path.join(data_dir, name) + '_feet_mask.npy', feet_mask)
+        np.save(os.path.join(data_dir, name) + '_foot_l.npy', foot_l)
+        np.save(os.path.join(data_dir, name) + '_foot_r.npy', foot_r)
+        np.save(os.path.join(data_dir, name) + '_faces.npy', faces)
+        np.save(os.path.join(data_dir, name) + '_left_points.npy', left_points)
+        np.save(os.path.join(data_dir, name) + '_right_points.npy', right_points)
+        print 'done'
+
+    if save_fig:
+        print 'Saving figures ...',
+        if not os.path.exists(fig_dir):
+            os.mkdir(fig_dir)
+        # generating and saving figure with labeled FEETS
+        mlab.clf()
+        mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=feet_mask.astype(np.int))
+        mlab.view(-90, 90)
+        mlab.savefig(os.path.join(fig_dir, name) + '_feet.png')
+
+        # generating and saving figure with labeled HEELS
+        mlab.clf()
+        heel_l_idx = (vertices[:, 1] <= heel_cut_l) * (vertices[:, 2] <= max_h) * foot_l_mask
+        heel_r_idx = (vertices[:, 1] <= heel_cut_r) * (vertices[:, 2] <= max_h) * foot_r_mask
+        heels_idxs = heel_l_idx + 2 * heel_r_idx
+        mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=heels_idxs)
+
+        for i in range(len(pts_l)):
+            mlab.points3d(pts_l[i][0], pts_l[i][1], pts_l[i][2], color=(0, 0, 0), scale_factor=2)
+        mlab.points3d(mean_pt_l[0], mean_pt_l[1], mean_pt_l[2], color=(1, 0, 1), scale_factor=4)
+
+        for i in range(len(pts_r)):
+            mlab.points3d(pts_r[i][0], pts_r[i][1], pts_r[i][2], color=(0, 0, 0), scale_factor=2)
+        mlab.points3d(mean_pt_r[0], mean_pt_r[1], mean_pt_r[2], color=(1, 0, 1), scale_factor=4)
+
+        mlab.view(-60, 90)
+        mlab.savefig(os.path.join(fig_dir, name) + '_heel_r.png')
+        mlab.view(210, 90)
+        mlab.savefig(os.path.join(fig_dir, name) + '_heel_l.png')
+
+        # generating and saving figure with POINTS
+        mlab.clf()
+        feet_idxs = feet_mask + 3 * heel_l_idx + 4 * heel_r_idx
+        mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=feet_idxs)
+
+        mlab.points3d(calf_l[0], calf_l[1], calf_l[2], color=(1, 1, 1), scale_factor=8)
+        mlab.points3d(calf_r[0], calf_r[1], calf_r[2], color=(1, 1, 1), scale_factor=8)
+
+        mlab.points3d(achill_l[0], achill_l[1], achill_l[2], color=(0, 0, 0), scale_factor=8)
+        mlab.points3d(achill_r[0], achill_r[1], achill_r[2], color=(0, 0, 0), scale_factor=8)
+
+        mlab.points3d(closest_pt_l[0], closest_pt_l[1], closest_pt_l[2], color=(0, 1, 1), scale_factor=8)
+        mlab.points3d(closest_pt_r[0], closest_pt_r[1], closest_pt_r[2], color=(0, 1, 1), scale_factor=8)
+
+        mlab.points3d(widest_pt_l[0], widest_pt_l[1], widest_pt_l[2], color=(1, 0, 1), scale_factor=8)
+        mlab.points3d(widest_pt_r[0], widest_pt_r[1], widest_pt_r[2], color=(1, 0, 1), scale_factor=8)
+
+        mlab.view(-90, 90)
+        mlab.savefig(os.path.join(fig_dir, name) + '_points.png')
+        print 'done'
+
+    if show:
+        mlab.clf()
+        heel_l_idx = (vertices[:, 1] <= heel_cut_l) * (vertices[:, 2] <= max_h) * foot_l_mask
+        heel_r_idx = (vertices[:, 1] <= heel_cut_r) * (vertices[:, 2] <= max_h) * foot_r_mask
+        feet_idxs = feet_mask + 3 * heel_l_idx + 4 * heel_r_idx
+
+        mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=feet_idxs)
+        # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=(vertices[:, 2] > thresh_z).astype(np.int))
+        # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=feet_mask.astype(np.int))
+        # mlab.colorbar()
+
+        for i in range(len(pts_l)):
+            mlab.points3d(pts_l[i][0], pts_l[i][1], pts_l[i][2], color=(0, 0, 0), scale_factor=2)
+        mlab.points3d(mean_pt_l[0], mean_pt_l[1], mean_pt_l[2], color=(1, 0, 1), scale_factor=4)
+
+        for i in range(len(pts_r)):
+            mlab.points3d(pts_r[i][0], pts_r[i][1], pts_r[i][2], color=(0, 0, 0), scale_factor=2)
+        mlab.points3d(mean_pt_r[0], mean_pt_r[1], mean_pt_r[2], color=(1, 0, 1), scale_factor=4)
+
+        mlab.points3d(calf_l[0], calf_l[1], calf_l[2], color=(1, 1, 1), scale_factor=8)
+        mlab.points3d(calf_r[0], calf_r[1], calf_r[2], color=(1, 1, 1), scale_factor=8)
+
+        mlab.points3d(achill_l[0], achill_l[1], achill_l[2], color=(0, 0, 0), scale_factor=8)
+        mlab.points3d(achill_r[0], achill_r[1], achill_r[2], color=(0, 0, 0), scale_factor=8)
+
+        mlab.points3d(closest_pt_l[0], closest_pt_l[1], closest_pt_l[2], color=(0, 1, 1), scale_factor=8)
+        mlab.points3d(closest_pt_r[0], closest_pt_r[1], closest_pt_r[2], color=(0, 1, 1), scale_factor=8)
+
+        mlab.points3d(widest_pt_l[0], widest_pt_l[1], widest_pt_l[2], color=(1, 0, 1), scale_factor=8)
+        mlab.points3d(widest_pt_r[0], widest_pt_r[1], widest_pt_r[2], color=(1, 0, 1), scale_factor=8)
+
+        mlab.show()
+
+    print '\n'
+
+
+# ---------------------------------------------------------------------------------------------------
+if __name__ == '__main__':
+    # fname = '/home/tomas/Data/Paty/zari/ply/augustynova.ply'
+    # fname = '/home/tomas/Data/Paty/zari/ply/babjak.ply'
+    # fname = '/home/tomas/Data/Paty/zari/ply/barcala.ply'
+    # fname = '/home/tomas/Data/Paty/zari/ply/zahorik.ply'
+
+    save_data = True
+    save_fig = True
+    show = False
+
+    # dir = '/home/tomas/Data/Paty/zari/ply/'
+    dir = '/home/tomas/Data/Paty/rijen/ply/'
+    names = tools.get_names(dir)
+    # names = ['zahorik',]
+    n_files = len(names)
+
+    log_file = open('log_file.txt', 'w')
+
+    processed = 0
+    for i in range(n_files):
+        print '--  Processing file %i/%i - %s  --' % (i + 1, n_files, names[i] + '.ply')
+        fname = os.path.join(dir[:-1], names[i] + '.ply')
+        try:
+            run(fname, save_data=save_data, save_fig=save_fig, show=show)
+            log_file.write(names[i] + '.ply ... ok\n')
+            processed += 1
+        except:
+            print 'Error occurred!\n'
+            log_file.write(names[i] + '.ply ... FAILED\n')
+
+    log_file.close()
+
+    print '\n------------------'
+    print 'DONE'
+    print 'processed: %i/%i' % (processed, n_files)
