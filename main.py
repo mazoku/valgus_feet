@@ -615,6 +615,73 @@ def heel_points(vertices, heel_cut, max_h, eps=2, show=False):
     return closest_pt, widest_pt
 
 
+def angle(pts):
+    deg = 1  # fitting line -> order 1
+    coeff1 = np.polyfit(pts[:2, 0], pts[:2, 2], deg)
+    poly1 = np.poly1d(coeff1)
+    n1 = (coeff1[0], -1, coeff1[1])
+
+    coeff2 = np.polyfit(pts[2:, 0], pts[2:, 2], deg)
+    poly2 = np.poly1d(coeff2)
+    n2 = (coeff2[0], -1, coeff2[1])
+
+    theta = np.arccos(np.dot(n1[:2], n2[:2]) / (np.linalg.norm(n1[:2]) * np.linalg.norm(n2[:2])))
+    theta = np.rad2deg(theta)
+
+    if theta < 90:
+        theta = 180 - theta
+
+    return theta, poly1, poly2
+
+
+def perp(a) :
+    b = np.empty_like(a)
+    b[0] = - a[1]
+    b[1] = a[0]
+    return b
+
+
+def line_intersect(a1, a2, b1, b2) :
+    da = a2 - a1
+    db = b2 - b1
+    dp = a1 - b1
+    dap = perp(da)
+    denom = np.dot(dap, db)
+    num = np.dot(dap, dp)
+    return (num / denom.astype(float)) * db + b1
+
+
+def draw_lines(vertices, poly1, poly2, pts, show=False):
+    pt1 = np.array((pts[0, 0], pts[0, 2]))
+    pt2 = np.array((pts[1, 0], pts[1, 2]))
+    pt3 = np.array((pts[2, 0], pts[2, 2]))
+    pt4 = np.array((pts[3, 0], pts[3, 2]))
+
+    xmin = vertices[:, 0].min()
+    xmax = vertices[:, 0].max()
+    x_axis = np.linspace(xmin, xmax, 2)
+    y_axis1 = poly1(x_axis)
+    y_axis2 = poly2(x_axis)
+
+    inters = line_intersect(pt1, pt2, pt3, pt4)
+
+    fig = plt.figure()
+    plt.plot(vertices[:, 0], vertices[:, 2], 'bx')
+    ax = plt.axis()
+    plt.hold(True)
+    plt.plot(x_axis, y_axis1, 'r-', linewidth=2)  # line #1
+    plt.plot(x_axis, y_axis2, 'g-', linewidth=2)  # line #2
+    for i in pts:  # points
+        plt.plot(i[0], i[2], 'ko')
+    plt.plot(inters[0], inters[1], 'yo')  # intersection point
+    plt.axis(ax)
+
+    if show:
+        plt.show()
+
+    return fig
+
+
 def run(fname, save_data=False, save_fig=False, show=False):
     vertices, faces, normals_v = read_ply(fname)
     if faces.shape[1] == 4:
@@ -740,8 +807,16 @@ def run(fname, save_data=False, save_fig=False, show=False):
     closest_pt_r, widest_pt_r = heel_points(foot_r, heel_cut_r, max_h, show=False)
     print 'done'
 
-    left_points = [calf_l, achill_l, heel_cut_l, closest_pt_l]
-    right_points = [calf_r, achill_r, heel_cut_r, closest_pt_r]
+    left_points = [calf_l, achill_l, closest_pt_l, widest_pt_l]
+    right_points = [calf_r, achill_r, closest_pt_r, widest_pt_r]
+
+    # ANGLE CALCULATION -------------------------------------------------------------
+    print 'Calculating angles ...'
+    theta_l, poly1_l, poly2_l = angle(np.array(left_points))
+    theta_r, poly1_r, poly2_r = angle(np.array(right_points))
+    print '\t angle L = %.1f' % theta_l
+    print '\t angle R = %.1f' % theta_r
+    print 'done'
 
     if save_data:
         print 'Saving data ...',
@@ -808,6 +883,12 @@ def run(fname, save_data=False, save_fig=False, show=False):
 
         mlab.view(-90, 90)
         mlab.savefig(os.path.join(fig_dir, name) + '_points.png')
+
+        # # ploting lines
+        # fig_l = draw_lines(foot_l, poly1_l, poly2_l, left_points)
+        # fig_l.savefig(os.path.join(fig_dir, name) + '_lines_L.png')
+        # fig_r = draw_lines(foot_r, poly1_r, poly2_r, right_points)
+        # fig_r.savefig(os.path.join(fig_dir, name) + '_lines_R.png')
         print 'done'
 
     if show:
@@ -843,7 +924,11 @@ def run(fname, save_data=False, save_fig=False, show=False):
 
         mlab.show()
 
+        # plt.show()
+
     print '\n'
+
+    return theta_l, theta_r
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -854,31 +939,52 @@ if __name__ == '__main__':
     # fname = '/home/tomas/Data/Paty/zari/ply/zahorik.ply'
 
     save_data = True
-    save_fig = True
+    save_fig = False
     show = False
 
-    # dir = '/home/tomas/Data/Paty/zari/ply/'
-    dir = '/home/tomas/Data/Paty/rijen/ply/'
+    months = ['zari', 'rijen']
+    month = months[0]
+    dir = '/home/tomas/Data/Paty/' + month + '/ply/'
+    # dir = '/home/tomas/Data/Paty/rijen/ply/'
     names = tools.get_names(dir)
-    # names = ['zahorik',]
+    # names = ['augustynova',]
     n_files = len(names)
 
     log_file = open('log_file.txt', 'w')
 
+    angles = dict()
+    failed = list()
     processed = 0
-    for i in range(n_files):
-        print '--  Processing file %i/%i - %s  --' % (i + 1, n_files, names[i] + '.ply')
-        fname = os.path.join(dir[:-1], names[i] + '.ply')
+    for (i, name) in enumerate(names):
+        print '--  Processing file %i/%i - %s  --' % (i + 1, n_files, name + '.ply')
+        fname = os.path.join(dir[:-1], name + '.ply')
         try:
-            run(fname, save_data=save_data, save_fig=save_fig, show=show)
-            log_file.write(names[i] + '.ply ... ok\n')
+            theta_L, theta_R = run(fname, save_data=save_data, save_fig=save_fig, show=show)
+            angles[name] = {month: (theta_L, theta_R)}
+
+            log_file.write(name + '.ply ... ok\n')
             processed += 1
         except:
             print 'Error occurred!\n'
-            log_file.write(names[i] + '.ply ... FAILED\n')
+            log_file.write(name + '.ply ... FAILED\n')
+            failed.append(name)
+        # if i == 4:
+        #     break
+
+    if save_data:
+        np.save(os.path.join(dir, 'npy', 'angles_' + month + '.npy'), angles)
+        np.save(os.path.join(dir, 'npy', 'failed.npy'), failed)
 
     log_file.close()
 
     print '\n------------------'
     print 'DONE'
     print 'processed: %i/%i' % (processed, n_files)
+
+    print 'angles:'
+    print angles
+
+    print 'failed:'
+    print failed
+
+    #TODO: nacist nazvy z ply a npy - urcit failed list

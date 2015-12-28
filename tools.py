@@ -4,9 +4,9 @@ import os
 
 import numpy as np
 
-def get_names(dir):
+def get_names(dir, ext='.ply'):
     files = os.listdir(dir)
-    names = [x[:-4] for x in files if '.ply' in x]
+    names = [x[:-4] for x in files if ext in x]
     return names
 
 def get_heel_cut_plane(pts, heel_cut, max_h):
