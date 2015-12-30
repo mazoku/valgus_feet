@@ -2,6 +2,8 @@ from __future__ import division
 
 __author__ = 'tomas'
 
+import warnings
+
 import numpy as np
 # from mpl_toolkits import mplot3d
 import matplotlib.pyplot as plt
@@ -12,8 +14,10 @@ from mayavi import mlab
 # from mayavi.modules.surface import Surface
 import transformations as trans
 
+import sys
 import os
 import tools
+import pickle
 
 from sklearn import decomposition as skldec
 from sklearn import cluster as sklclu
@@ -23,6 +27,8 @@ from scipy import signal as scisig
 
 from stl import mesh
 import pcl
+
+import xlsxwriter
 
 
 def read_ply(fname):
@@ -114,8 +120,14 @@ def read_stl(fname):
     return vertices, faces, normals_v, normals_f
 
 
+def alert():
+    freqs = [2000, 4000, 2000]
+    durs = [0.3, 0.5, 0.3]
+    for (f, d) in zip(freqs, durs):
+        os.system('play --no-show-progress --null --channels 1 synth %s sine %f' % ( d, f))
+
+
 def dihedral_angles(vec, plane='XY'):
-    print 'Calculating dihedral angles ...',
     if plane == 'XZ':
         n = np.array([0, 1, 0])
     elif plane == 'YZ':
@@ -128,12 +140,16 @@ def dihedral_angles(vec, plane='XY'):
 
     dihs = np.zeros(vec.shape[0])
     for i in range(vec.shape[0]):
-        dih = np.arcsin(np.dot(n, vec[i,:]) / (np.linalg.norm(n) * np.linalg.norm(vec[i,:])))
+        try:
+            dih = np.arcsin(np.dot(n, vec[i,:]) / (np.linalg.norm(n) * np.linalg.norm(vec[i,:])))
+        except RuntimeWarning:
+            dih = 0
+        # if dih is None or dih is np.Infinity:
+        #     dih = 0
         dih = np.degrees(dih)
         dih = min(dih, 180 - dih)
         dihs[i] = dih
 
-    print 'done'
     return dihs
 
 
@@ -399,7 +415,9 @@ def planefit(vertices):
 
 
 def calf_point(vertices, step=1):
-    idxs = vertices[:, 1] < ((vertices[:, 1].max() + vertices[:, 1].min()) / 2)
+    y_idxs = vertices[:, 1] < ((vertices[:, 1].max() + vertices[:, 1].min()) / 2)
+    z_idxs = vertices[:, 2] > (vertices[:, 2].max() / 2)
+    idxs = y_idxs * z_idxs
     vertices = vertices[idxs, :]
 
     start = 0
@@ -651,7 +669,8 @@ def line_intersect(a1, a2, b1, b2) :
     return (num / denom.astype(float)) * db + b1
 
 
-def draw_lines(vertices, poly1, poly2, pts, show=False):
+def draw_lines(vertices, poly1, poly2, pts, size=(8, 11), show=False):
+    pts = np.array(pts)
     pt1 = np.array((pts[0, 0], pts[0, 2]))
     pt2 = np.array((pts[1, 0], pts[1, 2]))
     pt3 = np.array((pts[2, 0], pts[2, 2]))
@@ -659,22 +678,26 @@ def draw_lines(vertices, poly1, poly2, pts, show=False):
 
     xmin = vertices[:, 0].min()
     xmax = vertices[:, 0].max()
+    zmin = vertices[:, 2].min()
+    zmax = vertices[:, 2].max()
     x_axis = np.linspace(xmin, xmax, 2)
     y_axis1 = poly1(x_axis)
     y_axis2 = poly2(x_axis)
 
     inters = line_intersect(pt1, pt2, pt3, pt4)
 
-    fig = plt.figure()
+    fig = plt.figure(figsize=size)
+    # fig = plt.figure()
     plt.plot(vertices[:, 0], vertices[:, 2], 'bx')
-    ax = plt.axis()
+    # ax = plt.axis()
     plt.hold(True)
     plt.plot(x_axis, y_axis1, 'r-', linewidth=2)  # line #1
     plt.plot(x_axis, y_axis2, 'g-', linewidth=2)  # line #2
     for i in pts:  # points
         plt.plot(i[0], i[2], 'ko')
     plt.plot(inters[0], inters[1], 'yo')  # intersection point
-    plt.axis(ax)
+    plt.axis('equal')
+    plt.axis([xmin - 10, xmax + 10, zmin - 10, zmax + 10])
 
     if show:
         plt.show()
@@ -682,52 +705,63 @@ def draw_lines(vertices, poly1, poly2, pts, show=False):
     return fig
 
 
-def run(fname, save_data=False, save_fig=False, show=False):
-    vertices, faces, normals_v = read_ply(fname)
-    if faces.shape[1] == 4:
-        faces = faces[:, 1:]
-    vertices_o = vertices.copy()
+def process_filenames(all_names_dir, proc_names_dir, ext='.npy'):
+    all_names = tools.get_names(all_names_dir)
 
-    dirs = fname.split('/')
-    name = dirs[-1][:-4]
-    data_dir = os.path.join('/'.join(dirs[:-1]), 'npy')
-    fig_dir = os.path.join('/'.join(dirs[:-1]), 'figs')
+    proc_files = tools.get_names(proc_names_dir, ext=ext)
+    proc_names = [x[:-6] for x in proc_files if '_faces' in x]
 
-    # vertices, desk_labels = align_with_desk(vertices)
+    # failed_names = []
+    # for i in all_names:
+    #     if i not in proc_names:
+    #         failed_names.append(i)
 
-    # align_xy_axes(vertices, faces, np.ones(vertices.shape[0], dtype=np.bool), n_comps=3, show=True)
+    failed_names = [x for x in all_names if x not in proc_names]
 
-    # align_xy_axes(vertices, faces, desk_labels, n_comps=2, show=True)
+    return all_names, proc_names, failed_names
 
-    # counting dihedral angles between XY-plane and vertex normals
-    # dihedrals = dihedral_angles(normals_v)
-    # hist, bin_edges = np.histogram(dihedrals, bins=180, density=True)
-    # bins = [np.mean((bin_edges[x], bin_edges[x + 1])) for x in range(len(hist)) ]
-    # max_ang = bins[np.argmax(hist)]
 
-    # print max_ang
-    # plt.figure()
-    # plt.plot(bins, hist)
-    # plt.show()
-    dih_xy = dihedral_angles(normals_v, plane='XY')
-    dih_xz = dihedral_angles(normals_v, plane='XZ')
-    dih_yz = dihedral_angles(normals_v, plane='YZ')
+def get_angles(normals_v, planes=['xy', 'xz', 'yz']):
+    dih_xy = []
+    dih_xz = []
+    dih_yz = []
+    if 'xy' in planes or 'yx' in planes:
+        dih_xy = dihedral_angles(normals_v, plane='XY')
+    if 'xz' in planes or 'zx' in planes:
+        dih_xz = dihedral_angles(normals_v, plane='XZ')
+    if 'yz' in planes or 'zy' in planes:
+        dih_yz = dihedral_angles(normals_v, plane='YZ')
 
-    # KMEANS -------------------------------------------------------
-    print 'KMeans clustering ...',
-    X = np.vstack((dih_xy, dih_xz, dih_yz)).T
-    n_clusters = 10
-    kmeans = sklclu.KMeans(n_clusters=n_clusters)
-    kmeans.fit(X)
-    labels = kmeans.labels_
-    # hist, bin_edges = np.histogram(labels, bins=n_clusters, density=True)
-    hist, bins = skiexp.histogram(labels, nbins=n_clusters)
-    max_lab = labels[np.argmax(hist)]
-    max_labels = labels == max_lab
-    print 'done'
+    return dih_xy, dih_xz, dih_yz
 
-    # FITTING PLANE ------------------------------------------------
-    print 'Fitting plane ...',
+
+def clustering(dih_xy, dih_xz):
+    # X = np.vstack((dih_xy, dih_xz, dih_yz)).T
+    # n_clusters = 10
+    # kmeans = sklclu.KMeans(n_clusters=n_clusters)
+    # kmeans.fit(X)
+    # labels = kmeans.labels_
+    # # hist, bin_edges = np.histogram(labels, bins=n_clusters, density=True)
+    # hist, bins = skiexp.histogram(labels, nbins=n_clusters)
+    # max_lab = labels[np.argmax(hist)]
+    # max_labels = labels == max_lab
+
+    eps = 4
+
+    hist_xy, bins_xy = skiexp.histogram(dih_xy, nbins=180)
+    hist_xz, bins_xz = skiexp.histogram(dih_xz, nbins=180)
+
+    peak_xy = bins_xy[np.argmax(hist_xy)]
+    peak_xz = bins_xz[np.argmax(hist_xz)]
+
+    max_labels_xy = (peak_xy - eps < dih_xy) * (dih_xy < peak_xy + eps)
+    max_labels_xz = (peak_xz - eps < dih_xz) * (dih_xz < peak_xz + eps)
+    max_labels = max_labels_xy * max_labels_xz
+
+    return max_labels
+
+
+def fitting_plane(vertices, faces, max_labels):
     f_sets, v_sets = splitMesh(vertices, faces, mask_v=max_labels)
     n_sets = v_sets.max() + 1
     sizes = np.zeros(n_sets)
@@ -735,26 +769,19 @@ def run(fname, save_data=False, save_fig=False, show=False):
         sizes[i] = (v_sets == i).sum()
     max_set = np.argmax(sizes)
 
-    # plane = planefit(vertices[max_labels,...])# * np.array([-1, -1, -1, 1])
     plane = planefit(vertices[v_sets == max_set,...])# * np.array([-1, -1, -1, 1])
     vertices = plane_as_xy_transform(vertices, plane, max_labels)
     if (vertices[:, 2] < 100).sum() > (vertices[:, 2] > 100).sum():
         vertices[:, 2] *= -1
 
-    # pca(vertices, faces, max_labels, n_comps=3, show=False)
     vertices = align_xy_axes(vertices, max_labels, show=False)
 
-    # labels = np.zeros(vertices.shape[0], dtype=np.bool)
-    # labels = np.where((max_ang - 5 < dihedrals) * (dihedrals < max_ang + 5), 1, 0)
-    # labels = np.abs(dihedrals - max_ang)
-
-    # vertices, desk_labels = align_with_desk(vertices, idxs=labels>0)
-    # vertices, desk_labels = align_with_desk(vertices, idxs=max_labels)
     vertices[:, 1] -= vertices[:, 1].min()
-    print 'done'
 
-    # SEGMENTING FEET ----------------------------------
-    print 'Segmenting feet ...',
+    return vertices
+
+
+def feet_segmentation(vertices, faces):
     thresh_z = 5
     mask = vertices[:, 2] > thresh_z
     f_sets, v_sets = splitMesh(vertices, faces, mask_v=mask)
@@ -773,6 +800,152 @@ def run(fname, save_data=False, save_fig=False, show=False):
         foot_l = vertices[foot_l_mask, :]
         foot_r = vertices[foot_r_mask, :]
     feet_mask = foot_l_mask + 2 * foot_r_mask
+
+    return foot_l, foot_l_mask, foot_r, foot_r_mask, feet_mask
+
+
+def save_figures(fig_dir, name,  vertices, faces, feet_mask, foot_l_mask, foot_r_mask, max_h,
+                 heel_cut_l, heel_cut_r, pts_l, pts_r, mean_pt_l, mean_pt_r,
+                 foot_l, foot_r, poly1_l, poly2_l, poly1_r, poly2_r, left_points, right_points):
+    if not os.path.exists(fig_dir):
+        os.mkdir(fig_dir)
+
+    calf_l = left_points[0]
+    calf_r = right_points[0]
+    achill_l = left_points[1]
+    achill_r = right_points[1]
+    closest_pt_l = left_points[2]
+    closest_pt_r = right_points[2]
+    widest_pt_l = left_points[3]
+    widest_pt_r = right_points[3]
+
+    # generating and saving figure with labeled FEETS
+    mlab.clf()
+    mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=feet_mask.astype(np.int))
+    mlab.view(-90, 90)
+    mlab.savefig(os.path.join(fig_dir, name) + '_feet.png')
+
+    # generating and saving figure with labeled HEELS
+    mlab.clf()
+    heel_l_idx = (vertices[:, 1] <= heel_cut_l) * (vertices[:, 2] <= max_h) * foot_l_mask
+    heel_r_idx = (vertices[:, 1] <= heel_cut_r) * (vertices[:, 2] <= max_h) * foot_r_mask
+    heels_idxs = heel_l_idx + 2 * heel_r_idx
+    mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=heels_idxs)
+
+    for i in range(len(pts_l)):
+        mlab.points3d(pts_l[i][0], pts_l[i][1], pts_l[i][2], color=(0, 0, 0), scale_factor=2)
+    mlab.points3d(mean_pt_l[0], mean_pt_l[1], mean_pt_l[2], color=(1, 0, 1), scale_factor=4)
+
+    for i in range(len(pts_r)):
+        mlab.points3d(pts_r[i][0], pts_r[i][1], pts_r[i][2], color=(0, 0, 0), scale_factor=2)
+    mlab.points3d(mean_pt_r[0], mean_pt_r[1], mean_pt_r[2], color=(1, 0, 1), scale_factor=4)
+
+    mlab.view(-60, 90)
+    mlab.savefig(os.path.join(fig_dir, name) + '_heel_r.png')
+    mlab.view(210, 90)
+    mlab.savefig(os.path.join(fig_dir, name) + '_heel_l.png')
+
+    # generating and saving figure with POINTS
+    mlab.clf()
+    feet_idxs = feet_mask + 3 * heel_l_idx + 4 * heel_r_idx
+    mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=feet_idxs)
+
+    mlab.points3d(calf_l[0], calf_l[1], calf_l[2], color=(1, 1, 1), scale_factor=8)
+    mlab.points3d(calf_r[0], calf_r[1], calf_r[2], color=(1, 1, 1), scale_factor=8)
+
+    mlab.points3d(achill_l[0], achill_l[1], achill_l[2], color=(0, 0, 0), scale_factor=8)
+    mlab.points3d(achill_r[0], achill_r[1], achill_r[2], color=(0, 0, 0), scale_factor=8)
+
+    mlab.points3d(closest_pt_l[0], closest_pt_l[1], closest_pt_l[2], color=(0, 1, 1), scale_factor=8)
+    mlab.points3d(closest_pt_r[0], closest_pt_r[1], closest_pt_r[2], color=(0, 1, 1), scale_factor=8)
+
+    mlab.points3d(widest_pt_l[0], widest_pt_l[1], widest_pt_l[2], color=(1, 0, 1), scale_factor=8)
+    mlab.points3d(widest_pt_r[0], widest_pt_r[1], widest_pt_r[2], color=(1, 0, 1), scale_factor=8)
+
+    mlab.view(-90, 90)
+    mlab.savefig(os.path.join(fig_dir, name) + '_points.png')
+
+    # ploting lines
+    fig_l = draw_lines(foot_l, poly1_l, poly2_l, left_points)
+    fig_l.savefig(os.path.join(fig_dir, name) + '_lines_L.png')
+    fig_r = draw_lines(foot_r, poly1_r, poly2_r, right_points)
+    fig_r.savefig(os.path.join(fig_dir, name) + '_lines_R.png')
+
+    plt.close('all')
+
+
+def compare_angles(fname1, fname2, cmp_fname='/home/tomas/Data/Paty/results.xlsx'):
+    # angles_1 = np.load(fname1)
+    # angles_2 = np.load(fname2)
+    angles_1 = pickle.load(open(fname1, 'rb'))
+    angles_2 = pickle.load(open(fname2, 'rb'))
+
+    # Create a workbook and add a worksheet.
+    workbook = xlsxwriter.Workbook(cmp_fname)
+    worksheet = workbook.add_worksheet()
+
+    row = 2
+    col = 0
+
+    header = ['jmeno', 'zari L', 'zari R', 'rijen L', 'rijen R']
+    for (i, h) in enumerate(header):
+        worksheet.write(0, i, h)
+
+    # Write data
+    for (i, name) in enumerate(angles_1.keys()):
+        zariL = angles_1[name]['zari'][0]
+        zariR = angles_1[name]['zari'][1]
+        rijenL = angles_2[name]['rijen'][0]
+        rijenR = angles_2[name]['rijen'][1]
+
+        rowdata = [name, zariL, zariR, rijenL, rijenR]
+
+        for (i, d) in enumerate(rowdata):
+            worksheet.write(row, i, d)
+        row += 1
+
+    workbook.close()
+
+
+def run(fname, save_data=False, save_fig=False, show=False):
+    vertices, faces, normals_v = read_ply(fname)
+    if faces.shape[1] == 4:
+        faces = faces[:, 1:]
+
+    dirs = fname.split('/')
+    name = dirs[-1][:-4]
+    data_dir = os.path.join('/'.join(dirs[:-1]), 'npy')
+    fig_dir = os.path.join('/'.join(dirs[:-1]), 'figs')
+
+    ## vertices, desk_labels = align_with_desk(vertices)
+
+    ## align_xy_axes(vertices, faces, np.ones(vertices.shape[0], dtype=np.bool), n_comps=3, show=True)
+
+    ## align_xy_axes(vertices, faces, desk_labels, n_comps=2, show=True)
+
+
+    # DIHEDRAL ANGLES ----------------------------------------------
+    print 'Calculating dihedral angles ...',
+    # dih_xy = dihedral_angles(normals_v, plane='XY')
+    # dih_xz = dihedral_angles(normals_v, plane='XZ')
+    # dih_yz = dihedral_angles(normals_v, plane='YZ')
+    # dih_xy, dih_xz, dih_yz = get_angles(normals_v)
+    dih_xy, dih_xz, dih_yz = get_angles(normals_v, planes=['xy', 'xz'])
+    print 'done'
+
+    # KMEANS -------------------------------------------------------
+    print 'Clustering ...',
+    max_labels = clustering(dih_xy, dih_xz)
+    print 'done'
+
+    # FITTING PLANE ------------------------------------------------
+    print 'Fitting plane ...',
+    vertices = fitting_plane(vertices, faces, max_labels)
+    print 'done'
+
+    # SEGMENTING FEET ----------------------------------
+    print 'Segmenting feet ...',
+    foot_l, foot_l_mask, foot_r, foot_r_mask, feet_mask = feet_segmentation(vertices, faces)
     print 'done'
 
     # CALCULATING MEDIAL AXES OF THE FEET ----------------------------------------
@@ -838,57 +1011,9 @@ def run(fname, save_data=False, save_fig=False, show=False):
         print 'Saving figures ...',
         if not os.path.exists(fig_dir):
             os.mkdir(fig_dir)
-        # generating and saving figure with labeled FEETS
-        mlab.clf()
-        mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=feet_mask.astype(np.int))
-        mlab.view(-90, 90)
-        mlab.savefig(os.path.join(fig_dir, name) + '_feet.png')
-
-        # generating and saving figure with labeled HEELS
-        mlab.clf()
-        heel_l_idx = (vertices[:, 1] <= heel_cut_l) * (vertices[:, 2] <= max_h) * foot_l_mask
-        heel_r_idx = (vertices[:, 1] <= heel_cut_r) * (vertices[:, 2] <= max_h) * foot_r_mask
-        heels_idxs = heel_l_idx + 2 * heel_r_idx
-        mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=heels_idxs)
-
-        for i in range(len(pts_l)):
-            mlab.points3d(pts_l[i][0], pts_l[i][1], pts_l[i][2], color=(0, 0, 0), scale_factor=2)
-        mlab.points3d(mean_pt_l[0], mean_pt_l[1], mean_pt_l[2], color=(1, 0, 1), scale_factor=4)
-
-        for i in range(len(pts_r)):
-            mlab.points3d(pts_r[i][0], pts_r[i][1], pts_r[i][2], color=(0, 0, 0), scale_factor=2)
-        mlab.points3d(mean_pt_r[0], mean_pt_r[1], mean_pt_r[2], color=(1, 0, 1), scale_factor=4)
-
-        mlab.view(-60, 90)
-        mlab.savefig(os.path.join(fig_dir, name) + '_heel_r.png')
-        mlab.view(210, 90)
-        mlab.savefig(os.path.join(fig_dir, name) + '_heel_l.png')
-
-        # generating and saving figure with POINTS
-        mlab.clf()
-        feet_idxs = feet_mask + 3 * heel_l_idx + 4 * heel_r_idx
-        mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=feet_idxs)
-
-        mlab.points3d(calf_l[0], calf_l[1], calf_l[2], color=(1, 1, 1), scale_factor=8)
-        mlab.points3d(calf_r[0], calf_r[1], calf_r[2], color=(1, 1, 1), scale_factor=8)
-
-        mlab.points3d(achill_l[0], achill_l[1], achill_l[2], color=(0, 0, 0), scale_factor=8)
-        mlab.points3d(achill_r[0], achill_r[1], achill_r[2], color=(0, 0, 0), scale_factor=8)
-
-        mlab.points3d(closest_pt_l[0], closest_pt_l[1], closest_pt_l[2], color=(0, 1, 1), scale_factor=8)
-        mlab.points3d(closest_pt_r[0], closest_pt_r[1], closest_pt_r[2], color=(0, 1, 1), scale_factor=8)
-
-        mlab.points3d(widest_pt_l[0], widest_pt_l[1], widest_pt_l[2], color=(1, 0, 1), scale_factor=8)
-        mlab.points3d(widest_pt_r[0], widest_pt_r[1], widest_pt_r[2], color=(1, 0, 1), scale_factor=8)
-
-        mlab.view(-90, 90)
-        mlab.savefig(os.path.join(fig_dir, name) + '_points.png')
-
-        # # ploting lines
-        # fig_l = draw_lines(foot_l, poly1_l, poly2_l, left_points)
-        # fig_l.savefig(os.path.join(fig_dir, name) + '_lines_L.png')
-        # fig_r = draw_lines(foot_r, poly1_r, poly2_r, right_points)
-        # fig_r.savefig(os.path.join(fig_dir, name) + '_lines_R.png')
+        save_figures(fig_dir, name, vertices, faces, feet_mask, foot_l_mask, foot_r_mask, max_h,
+                     heel_cut_l, heel_cut_r, pts_l, pts_r, mean_pt_l, mean_pt_r,
+                     foot_l, foot_r, poly1_l, poly2_l, poly1_r, poly2_r, left_points, right_points)
         print 'done'
 
     if show:
@@ -924,7 +1049,7 @@ def run(fname, save_data=False, save_fig=False, show=False):
 
         mlab.show()
 
-        # plt.show()
+        plt.show()
 
     print '\n'
 
@@ -933,17 +1058,28 @@ def run(fname, save_data=False, save_fig=False, show=False):
 
 # ---------------------------------------------------------------------------------------------------
 if __name__ == '__main__':
+    print 'Writing results to file...',
+    fname1 = '/home/tomas/Data/Paty/zari/ply/npy/angles_zari.p'
+    fname2 = '/home/tomas/Data/Paty/rijen/ply/npy/angles_rijen.p'
+    resname = '/home/tomas/Data/Paty/results.xlsx'
+    compare_angles(fname1, fname2, cmp_fname=resname)
+    print 'done'
+
+    sys.exit(0)
+
+    warnings.filterwarnings('error')
+
     # fname = '/home/tomas/Data/Paty/zari/ply/augustynova.ply'
     # fname = '/home/tomas/Data/Paty/zari/ply/babjak.ply'
     # fname = '/home/tomas/Data/Paty/zari/ply/barcala.ply'
     # fname = '/home/tomas/Data/Paty/zari/ply/zahorik.ply'
 
     save_data = True
-    save_fig = False
+    save_fig = True
     show = False
 
     months = ['zari', 'rijen']
-    month = months[0]
+    month = months[1]
     dir = '/home/tomas/Data/Paty/' + month + '/ply/'
     # dir = '/home/tomas/Data/Paty/rijen/ply/'
     names = tools.get_names(dir)
@@ -955,20 +1091,21 @@ if __name__ == '__main__':
     angles = dict()
     failed = list()
     processed = 0
+    # names = ['lastovicka',]
     for (i, name) in enumerate(names):
         print '--  Processing file %i/%i - %s  --' % (i + 1, n_files, name + '.ply')
         fname = os.path.join(dir[:-1], name + '.ply')
-        try:
-            theta_L, theta_R = run(fname, save_data=save_data, save_fig=save_fig, show=show)
-            angles[name] = {month: (theta_L, theta_R)}
+        # try:
+        theta_L, theta_R = run(fname, save_data=save_data, save_fig=save_fig, show=show)
+        angles[name] = {month: (theta_L, theta_R)}
 
-            log_file.write(name + '.ply ... ok\n')
-            processed += 1
-        except:
-            print 'Error occurred!\n'
-            log_file.write(name + '.ply ... FAILED\n')
-            failed.append(name)
-        # if i == 4:
+        log_file.write(name + '.ply ... ok\n')
+        processed += 1
+        # except:
+        #     print 'Error occurred!\n'
+        #     log_file.write(name + '.ply ... FAILED\n')
+        #     failed.append(name)
+        # if i == 1:
         #     break
 
     if save_data:
@@ -987,4 +1124,4 @@ if __name__ == '__main__':
     print 'failed:'
     print failed
 
-    #TODO: nacist nazvy z ply a npy - urcit failed list
+    alert()

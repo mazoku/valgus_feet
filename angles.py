@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import os
 import sys
 
+import pickle
 import tools
 import main
 
@@ -82,7 +83,8 @@ def run(pts):
 
 #--------------------------------------------------------------------
 if __name__ == '__main__':
-    month = 'zari'
+    months = ['zari', 'rijen']
+    month = months[1]
     dir = '/home/tomas/Data/Paty/' + month + '/ply/'
     names = tools.get_names(dir, ext='.ply')
     # names = ['augustynova',]
@@ -114,9 +116,10 @@ if __name__ == '__main__':
         except:
             print '\tSkipped: ' + str(sys.exc_info()[0])
 
-    fname = os.path.join(dir, 'npy', 'angles_' + month + '.npy')
+    fname = os.path.join(dir, 'npy', 'angles_' + month + '.p')
     print 'Saving results to', fname
-    np.save(fname, angles)
+    # np.save(fname, angles)
+    pickle.dump(angles, open(fname, 'wb'))
 
 
     # pts = np.array([[0, 0, 0],
