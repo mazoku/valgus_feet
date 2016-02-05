@@ -23,6 +23,8 @@ from sklearn import decomposition as skldec
 from sklearn import cluster as sklclu
 from skimage import exposure as skiexp
 
+import cv2
+
 from scipy import signal as scisig
 
 from stl import mesh
@@ -291,11 +293,13 @@ def align_xy_axes(pts, labels, show=False, talk=False):
 
     min_en = np.Inf
     min_en_rot = None
+    ens = []
     for i in range(0, 180, 1):
         TM = trans.axangle2mat((0, 0, 1), np.deg2rad(i))
         pts_t = np.array(np.dot(labeled_v, TM.T))
 
-        en = get_energy(pts_t)
+        en = get_energy(pts_t, show=False)
+        ens.append(en)
         if en < min_en:
             min_en = en
             min_en_rot = i
@@ -308,8 +312,8 @@ def align_xy_axes(pts, labels, show=False, talk=False):
         # plt.show()
 
     if talk:
-        print 'Min energy: %.2f, rotation angle:%i degs' % (min_en, min_en_rot
-                                                   )
+        print 'Min energy: %.2f, rotation angle:%i degs' % (min_en, min_en_rot)
+
     # points rotation
     TM = trans.axangle2mat((0, 0, 1), np.deg2rad(min_en_rot))
     pts_t = np.array(np.dot(pts, TM.T))
@@ -322,6 +326,9 @@ def align_xy_axes(pts, labels, show=False, talk=False):
         plt.subplot(222)
         plt.plot(pts_t[:, 0], pts_t[:, 1], 'bx'), plt.title('aligned')
         # plt.axes().set_aspect('equal')
+
+        # plt.figure()
+        # plt.plot(range(0, 180, 1), ens, 'b-', linewidth=3), plt.title('energie rotace')
 
     # if the feets are above each other, we have to rotate them 90 degrees
     labeled_v = pts_t[labels, ...]
@@ -388,7 +395,9 @@ def get_energy(pts, show=False):
         plt.figure()
         plt.subplot(121), plt.plot(pts[:, 0], pts[:, 1], 'bx')
         plt.subplot(222), plt.plot(bins_x, hist_x, 'b-'), plt.title('X-projection')
+        plt.title('std=%.2f, len=%i'%(std_x, len_x))
         plt.subplot(224), plt.plot(bins_y, hist_y, 'b-'), plt.title('Y-projection')
+        plt.title('std=%.2f, len=%i'%(std_y, len_y))
         plt.show()
 
     return en
@@ -735,28 +744,48 @@ def get_angles(normals_v, planes=['xy', 'xz', 'yz']):
     return dih_xy, dih_xz, dih_yz
 
 
-def clustering(dih_xy, dih_xz):
-    # X = np.vstack((dih_xy, dih_xz, dih_yz)).T
-    # n_clusters = 10
-    # kmeans = sklclu.KMeans(n_clusters=n_clusters)
-    # kmeans.fit(X)
-    # labels = kmeans.labels_
-    # # hist, bin_edges = np.histogram(labels, bins=n_clusters, density=True)
-    # hist, bins = skiexp.histogram(labels, nbins=n_clusters)
-    # max_lab = labels[np.argmax(hist)]
-    # max_labels = labels == max_lab
+def clustering(dih_xy, dih_xz, dih_yz=None, method='hist'):
+    if dih_yz is None:
+        X = np.vstack((dih_xy, dih_xz)).T
+    else:
+        X = np.vstack((dih_xy, dih_xz, dih_yz)).T
+# def clustering(dih_xy, dih_xz, dih_yz):
+#     X = np.vstack((dih_xy, dih_xz, dih_yz)).T
+    if method in ['kmeans', 'cmeans']:
+        n_clusters = 10
+        kmeans = sklclu.KMeans(n_clusters=n_clusters)
+        kmeans.fit(X)
+        labels = kmeans.labels_
+        # hist, bin_edges = np.histogram(labels, bins=n_clusters, density=True)
+        hist, bins = skiexp.histogram(labels, nbins=n_clusters)
+        max_lab = labels[np.argmax(hist)]
+        max_labels = labels == max_lab
 
-    eps = 4
+    elif method == 'hist':
+        eps = 4
 
-    hist_xy, bins_xy = skiexp.histogram(dih_xy, nbins=180)
-    hist_xz, bins_xz = skiexp.histogram(dih_xz, nbins=180)
+        hist_xy, bins_xy = skiexp.histogram(dih_xy, nbins=180)
+        hist_xz, bins_xz = skiexp.histogram(dih_xz, nbins=180)
 
-    peak_xy = bins_xy[np.argmax(hist_xy)]
-    peak_xz = bins_xz[np.argmax(hist_xz)]
+        # hist = cv2.calcHist([(dih_xy + 90).astype(np.uint8), (dih_xz + 90).astype(np.uint8)], [0, 1], None, [180, 180], [0, 180, 0, 180])
+        # plt.figure()
+        # plt.imshow(hist, interpolation='nearest')
+        # plt.show()
 
-    max_labels_xy = (peak_xy - eps < dih_xy) * (dih_xy < peak_xy + eps)
-    max_labels_xz = (peak_xz - eps < dih_xz) * (dih_xz < peak_xz + eps)
-    max_labels = max_labels_xy * max_labels_xz
+        # plt.figure()
+        # plt.plot(bins_xy+90, hist_xy+90, 'g-', linewidth=3)
+        # plt.plot(bins_xz+90, hist_xz+90, 'b-', linewidth=3)
+        # plt.show()
+
+        peak_xy = bins_xy[np.argmax(hist_xy)]
+        peak_xz = bins_xz[np.argmax(hist_xz)]
+
+        max_labels_xy = (peak_xy - eps < dih_xy) * (dih_xy < peak_xy + eps)
+        max_labels_xz = (peak_xz - eps < dih_xz) * (dih_xz < peak_xz + eps)
+        max_labels = max_labels_xy * max_labels_xz
+    else:
+        print 'WARNING! Wrong method type. Using \'hist\' as default.'
+        max_labels = clustering(dih_xy, dih_xz)
 
     return max_labels
 
@@ -923,6 +952,8 @@ def run(fname, save_data=False, save_fig=False, show=False):
 
     ## align_xy_axes(vertices, faces, desk_labels, n_comps=2, show=True)
 
+    # mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces)
+    # mlab.show()
 
     # DIHEDRAL ANGLES ----------------------------------------------
     print 'Calculating dihedral angles ...',
@@ -931,17 +962,22 @@ def run(fname, save_data=False, save_fig=False, show=False):
     # dih_yz = dihedral_angles(normals_v, plane='YZ')
     # dih_xy, dih_xz, dih_yz = get_angles(normals_v)
     dih_xy, dih_xz, dih_yz = get_angles(normals_v, planes=['xy', 'xz'])
+    # dih_xy, dih_xz, dih_yz = get_angles(normals_v, planes=['xy', 'xz', 'yz'])
     print 'done'
 
     # KMEANS -------------------------------------------------------
     print 'Clustering ...',
     max_labels = clustering(dih_xy, dih_xz)
+    # max_labels = clustering(dih_xy, dih_xz, dih_yz, method='kmeans')
     print 'done'
+    # mesh_vis = mlab.triangular_mesh(vertices[:, 0], vertices[:, 1], vertices[:, 2], faces, scalars=max_labels.astype(np.int))
+    # mlab.show()
 
     # FITTING PLANE ------------------------------------------------
     print 'Fitting plane ...',
     vertices = fitting_plane(vertices, faces, max_labels)
     print 'done'
+
 
     # SEGMENTING FEET ----------------------------------
     print 'Segmenting feet ...',
@@ -1058,14 +1094,14 @@ def run(fname, save_data=False, save_fig=False, show=False):
 
 # ---------------------------------------------------------------------------------------------------
 if __name__ == '__main__':
-    print 'Writing results to file...',
-    fname1 = '/home/tomas/Data/Paty/zari/ply/npy/angles_zari.p'
-    fname2 = '/home/tomas/Data/Paty/rijen/ply/npy/angles_rijen.p'
-    resname = '/home/tomas/Data/Paty/results.xlsx'
-    compare_angles(fname1, fname2, cmp_fname=resname)
-    print 'done'
-
-    sys.exit(0)
+    # print 'Writing results to file...',
+    # fname1 = '/home/tomas/Data/Paty/zari/ply/npy/angles_zari.p'
+    # fname2 = '/home/tomas/Data/Paty/rijen/ply/npy/angles_rijen.p'
+    # resname = '/home/tomas/Data/Paty/results.xlsx'
+    # compare_angles(fname1, fname2, cmp_fname=resname)
+    # print 'done'
+    #
+    # sys.exit(0)
 
     warnings.filterwarnings('error')
 
@@ -1074,12 +1110,12 @@ if __name__ == '__main__':
     # fname = '/home/tomas/Data/Paty/zari/ply/barcala.ply'
     # fname = '/home/tomas/Data/Paty/zari/ply/zahorik.ply'
 
-    save_data = True
-    save_fig = True
+    save_data = False
+    save_fig = False
     show = False
 
     months = ['zari', 'rijen']
-    month = months[1]
+    month = months[0]
     dir = '/home/tomas/Data/Paty/' + month + '/ply/'
     # dir = '/home/tomas/Data/Paty/rijen/ply/'
     names = tools.get_names(dir)
