@@ -85,7 +85,8 @@ def run(pts):
 if __name__ == '__main__':
     months = ['zari', 'rijen']
     month = months[1]
-    dir = '/home/tomas/Data/Paty/' + month + '/ply/'
+    # dir = '/home/tomas/Data/Paty/' + month + '/ply/'
+    dir = '/home/tomas/Data/Paty/new/%s/' % month
     names = tools.get_names(dir, ext='.ply')
     # names = ['augustynova',]
     n_files = len(names)
@@ -94,7 +95,8 @@ if __name__ == '__main__':
     for (i, name) in enumerate(names):
         print '--  Processing file %i/%i - %s  --' % (i + 1, n_files, name)
         try:
-            base_name = '/home/tomas/Data/Paty/' + month + '/ply/npy/' + name
+            # base_name = '/home/tomas/Data/Paty/' + month + '/ply/npy/' + name
+            base_name = '/home/tomas/Data/Paty/new/' + month + '/npy/' + name
             fname_l = base_name + '_left_points.npy'
             fname_r = base_name + '_right_points.npy'
 
